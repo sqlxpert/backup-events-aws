@@ -1,0 +1,29 @@
+# Back up RDS/Aurora databases, etc. to a different AWS account and region
+# github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
+
+[MAIN]
+
+load-plugins=pylint.extensions.no_self_use
+
+[MESSAGES CONTROL]
+
+disable=fixme,locally-disabled
+
+[REPORTS]
+
+reports=no
+
+[VARIABLES]
+
+max-locals=25
+
+[BASIC]
+
+argument-rgx=[a-z_][a-z0-9_]{1,30}$
+variable-rgx=[a-z_][a-z0-9_]{1,30}$
+
+[FORMAT]
+
+indent-string="  "
+indent-after-paren=2
+max-line-length=80

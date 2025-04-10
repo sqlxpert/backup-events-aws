@@ -1,0 +1,5 @@
+# Back up RDS/Aurora databases, etc. to a different AWS account and region
+# github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
+
+boto3
+botocore
