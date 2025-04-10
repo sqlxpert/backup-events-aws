@@ -128,6 +128,10 @@ class Backup():
     return self._from_job_details.get(self._from_job_id_key, "")
 
   @property
+  def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
+    return ""
+
+  @property
   def arn(self):
     return self._from_event.get("resources", [""])[0]
 
@@ -161,7 +165,7 @@ class Backup():
     """
     action_kwargs = self.action_kwargs_base.get(
       action_name, self.action_kwargs_base["DEFAULT"]
-    ) | kwargs_add | {"RecoveryPointArn": self.arn}  # Copy, don't update!
+    ) | kwargs_add  # Copy, don't update!
     resp = None
 
     if validate_backup and not self.valid():
@@ -190,8 +194,21 @@ class BackupCopy(Backup):
   _from_job_id_key = "copyJobId"
 
   @property
+  def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
+    return self._from_event.get("resources", [""])[0]
+
+  @property
   def arn(self):  # pylint: disable=missing-function-docstring
     return self._from_job_details.get("destinationRecoveryPointArn", "")
+
+
+  def valid(self):
+    """Return True if all required attributes are non-empty
+
+    A cursory validation, but EventBridge filters in CloudFormation allow only
+    acceptable events, which come from AWS Backup.
+    """
+    return all([self.from_job_id, self.from_backup_arn, self.arn])
 
 
 def get_update_lifecycle_kwargs(describe_resp):
@@ -260,7 +277,13 @@ def lambda_handler_copy(event, context):  # pylint: disable=unused-argument
   """Copy a backup to a vault in another AWS account OR another region
   """
   backup = Backup.new(event)
-  backup.do_action("start_copy_job", {"IdempotencyToken": backup.from_job_id})
+  backup.do_action(
+    "start_copy_job",
+    {
+      "RecoveryPointArn": backup.arn,
+      "IdempotencyToken": backup.from_job_id,
+    }
+  )
 
 
 def lambda_handler_update_lifecycle(event, context):  # pylint: disable=unused-argument
@@ -271,10 +294,15 @@ def lambda_handler_update_lifecycle(event, context):  # pylint: disable=unused-a
     zone to UTC, for correct results.
   """
   backup = Backup.new(event)
-  describe_resp = backup.do_action("describe_recovery_point")
+  describe_resp = backup.do_action(
+    "describe_recovery_point",
+    {"RecoveryPointArn": backup.from_backup_arn}
+  )
   if boto3_success(describe_resp):
     kwargs_add = get_update_lifecycle_kwargs(describe_resp)
     if kwargs_add:
       backup.do_action(
-        "update_recovery_point_lifecycle", kwargs_add, validate_backup=False
+        "update_recovery_point_lifecycle",
+        kwargs_add | {"RecoveryPointArn": backup.from_backup_arn},
+        validate_backup=False
       )
