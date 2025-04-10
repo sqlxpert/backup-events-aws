@@ -188,8 +188,8 @@ class BackupCopy(Backup):
   https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#copy-job-state-change-completed
 
   Why didn't AWS use the same structure and keys for start_backup_job and the
-  destination half of start_copy_job ? Both methods put a backup in a
-  destination vault.
+  destination half of start_copy_job ? Both methods put a backup into a
+  destination vault!
   """
   _from_job_id_key = "copyJobId"
 
@@ -200,7 +200,6 @@ class BackupCopy(Backup):
   @property
   def arn(self):  # pylint: disable=missing-function-docstring
     return self._from_job_details.get("destinationRecoveryPointArn", "")
-
 
   def valid(self):
     """Return True if all required attributes are non-empty
@@ -294,15 +293,13 @@ def lambda_handler_update_lifecycle(event, context):  # pylint: disable=unused-a
     zone to UTC, for correct results.
   """
   backup = Backup.new(event)
-  describe_resp = backup.do_action(
-    "describe_recovery_point",
-    {"RecoveryPointArn": backup.from_backup_arn}
-  )
+  kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
+  describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
   if boto3_success(describe_resp):
-    kwargs_add = get_update_lifecycle_kwargs(describe_resp)
-    if kwargs_add:
+    kwargs_lifecycle = get_update_lifecycle_kwargs(describe_resp)
+    if kwargs_lifecycle:
       backup.do_action(
         "update_recovery_point_lifecycle",
-        kwargs_add | {"RecoveryPointArn": backup.from_backup_arn},
+        kwargs_lifecycle | kwargs_operand,
         validate_backup=False
       )
