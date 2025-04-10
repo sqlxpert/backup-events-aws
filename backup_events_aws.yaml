@@ -1,0 +1,761 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: |-
+  Back up RDS/Aurora databases, etc. to a different AWS account and region
+
+  github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
+
+Parameters:
+
+  PlaceholderHelp:
+    Type: String
+    Default: "https://github.com/sqlxpert/backup-events-aws"
+
+  PlaceholderSuggestedStackName:
+    Type: String
+    Default: "AWSBackupEvents"
+
+  Enable:
+    Type: String
+    Description: >-
+      Whether to enable or disable the EventBridge rules that trigger this
+      tool's AWS Lambda functions
+    Default: "true"
+    AllowedValues:
+      - "false"
+      - "true"
+
+  PlaceholderAdvancedParameters:
+    Type: String
+    Default: ""
+    AllowedValues:
+      - ""
+
+  OrgId:
+    Type: String
+    Description: >-
+      ID of your AWS Organizations organization (for example, "o-abcde12345").
+      This allows EventBridge to trigger the second (secondary-region) copy
+      inside the central backup AWS account, after the first (same-region)
+      copy has completed.
+
+  OnlyResourceAccountId:
+    Type: String
+    Description: >-
+      Account number of the AWS account that contains protected resources;
+      backups originate in this account. Leave blank if your protected
+      resources are in multiple AWS accounts. In that case, less strict,
+      organization-wide permissions will be used.
+
+  CentralAccountId:
+    Type: String
+    Description: >-
+      Account number of the central backup AWS account, to which backups
+      will be copied. The first copy is stored in the same region as the
+      protected resource and its original backup.
+
+  CentralSecondaryRegion:
+    Type: String
+    Description: >-
+      Region code (for example, "us-east-1") of the region in which the second
+      copy in the central backup AWS account will be stored. This region
+      should be different from the regions that contain protected resources,
+      that is, no backups should originate in this region.
+
+  NewDeleteAfterDays:
+    Type: Number
+    Description: >-
+      How many days (from creation) to keep an original backup, after the
+      first copy (to the central backup AWS account, but still in the same
+      region) has completed. For incremental backups -- such as EBS volume
+      snapshots (including those making up EC2 images AMIs), and RDS (but not
+      Aurora) database snapshots, set this to at least the number of days
+      between backups. See the "Important" warning in
+      https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html
+    Default: 7
+
+  VaultName:
+    Type: String
+    Description: >-
+      Name (not complete ARN) of the vaults from which and to which backups
+      will be copied. This tool requires vaults of the same name in all
+      relevant AWS accounts and regions: in each AWS account and region that
+      contains protected resources; within the central backup AWS account, in
+      each of the same regions as protected resources and their original
+      backups; and within the central backup AWS account, in the secondary
+      region.
+      If you use the AWS Console, AWS Backup creates the "Default" vault the
+      first time you view the list of vaults in a given AWS account and
+      region. Otherwise, you must explicitly create vaults. See
+      https://docs.aws.amazon.com/aws-backup/latest/devguide/create-a-vault.html
+
+  CopyRoleName:
+    Type: String
+    Description: >-
+      Name (not complete ARN) of the IAM role that the AWS Backup service will
+      assume when copying backups. Roles are account-wide, not regional. This
+      tool requires a role of the same name in each AWS account that contains
+      protected resources and their original backups, as well as the central
+      backup AWS account. Within the central backup account, in regions that
+      contain protected resources and their original backups, you must also
+      update vault policies to allow this role to "backup:CopyIntoBackupVault"
+      .
+      Before using "service-role/AWSBackupDefaultServiceRole" , see
+      https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles
+    Default: "service-role/AWSBackupDefaultServiceRole"
+
+  CopyLambdaFnReservedConcurrentExecutions:
+    Type: Number
+    Description: >-
+      How many backup copy requests can definitely be started at once. See
+      https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html#configuration-concurrency-reserved
+    MinValue: 0
+    Default: 2
+
+  CopyLambdaFnMemoryMB:
+    Type: Number
+    Description: >-
+      How many megabytes of memory to allocate to the "Copy" AWS Lambda
+      function. Increase this only in case of out-of-memory errors. See
+      https://docs.aws.amazon.com/lambda/latest/operatorguide/computing-power.html
+    Default: 128
+
+  CopyLambdaFnTimeoutSecs:
+    Type: Number
+    Description: >-
+      How many seconds before execution of the "Copy" AWS Lambda function
+      is canceled. Increase this only in case of time-out errors. See
+      https://aws.amazon.com/about-aws/whats-new/2018/10/aws-lambda-supports-functions-that-can-run-up-to-15-minutes/
+    Default: 60
+
+  UniqueNamePrefix:
+    Type: String
+    Description: >-
+      Function name prefix. Change only if you need to create multiple stacks
+      from the same template, in the same AWS accounts and regions, for
+      example, during a blue/green deployment.
+    Default: "AWSBackupEvents"
+
+  UpdateLifecycleLambdaFnReservedConcurrentExecutions:
+    Type: Number
+    Description: >-
+      How many copied backups can definitely have their lifecycles updated at
+      once. See
+      https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html#configuration-concurrency-reserved
+    MinValue: 0
+    Default: 2
+
+  UpdateLifecycleLambdaFnMemoryMB:
+    Type: Number
+    Description: >-
+      How many megabytes of memory to allocate to the "Update Lifecycle" AWS
+      Lambda function. Increase this only in case of out-of-memory errors.
+    Default: 128
+
+  UpdateLifecycleLambdaFnTimeoutSecs:
+    Type: Number
+    Description: >-
+      How many seconds before execution of the "Update Lifecycle" AWS Lambda
+      function is canceled. Increase this only in case of time-out errors.
+    Default: 60
+
+  LogsRetainDays:
+    Type: Number
+    Description: >-
+      How many days to keep CloudWatch logs from the AWS Lambda functions. See
+      retentionInDays in
+      http://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutRetentionPolicy.html
+    Default: 7
+
+  LogLevel:
+    Type: String
+    Description: >-
+      Threshold for logging the activities of the AWS Lambda functions. See
+      https://docs.python.org/3/library/logging.html#levels
+    Default: ERROR
+    AllowedValues:
+      - CRITICAL
+      - ERROR
+      - WARNING
+      - INFO
+      - DEBUG
+      - NOTSET
+
+  CloudWatchLogsKmsKey:
+    Type: String
+    Description: >-
+      If this is blank, AWS Lambda function logs receive CloudWatch Logs
+      default non-KMS encryption. To use a customer-managed, multi-region KMS
+      encryption key instead, specify "ACCOUNT:key/KEY_ID", where KEY_ID
+      begins with "mrk-". The primary, or a replica key, must exist in the
+      region where backups originate. For the necessary key policy updates,
+      see
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html#cmk-permissions
+    Default: ""
+
+  SqsKmsKey:
+    Type: String
+    Description: >-
+      If this is blank, queue messages will not be encrypted. To use the
+      AWS-managed key (which does not support key policy restrictions, or
+      cross-region or cross-account usage), specify "alias/aws/sqs". To use a
+      custom key, specify "ACCOUNT:key/KEY_ID". Whether the custom key is a
+      single-region key, a multi-region key primary, or a multi-region key
+      replica, it must be in the same region where you are creating this
+      stack. If the custom key is in a different AWS account than this stack,
+      you must update the key policy to allow cross-account usage. For a
+      StackSet, if you wish to use a custom key, it must be multi-region
+      ("mrk-" prefix in the KEY_ID), and a replica (or the primary key itself)
+      must exist in every target region.
+    Default: ""
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: For Reference
+        Parameters:
+          - PlaceholderSuggestedStackName
+          - PlaceholderHelp
+      - Label:
+          default: Essential
+        Parameters:
+          - Enable
+          - OrgId
+          - OnlyResourceAccountId
+          - CentralAccountId
+          - CentralSecondaryRegion
+          - VaultName
+          - CopyRoleName
+          - NewDeleteAfterDays
+      - Label:
+          default: Advanced...
+        Parameters:
+          - PlaceholderAdvancedParameters
+      - Label:
+          default: >-
+            AWS Lambda function to start copying a backup
+        Parameters:
+          - CopyLambdaFnReservedConcurrentExecutions
+          - CopyLambdaFnMemoryMB
+          - CopyLambdaFnTimeoutSecs
+          - UniqueNamePrefix
+      - Label:
+          default: >-
+            AWS Lambda function to schedule an original backup for deletion
+        Parameters:
+          - UpdateLifecycleLambdaFnReservedConcurrentExecutions
+          - UpdateLifecycleLambdaFnMemoryMB
+          - UpdateLifecycleLambdaFnTimeoutSecs
+      - Label:
+          default: Logs
+        Parameters:
+          - LogsRetainDays
+          - LogLevel
+          - CloudWatchLogsKmsKey
+      - Label:
+          default: >-
+            "Dead letter" SQS queue for event errors
+        Parameters:
+          - SqsKmsKey
+
+    ParameterLabels:
+
+      PlaceholderSuggestedStackName:
+        default: Suggested stack name
+      PlaceholderHelp:
+        default: For help with this stack, see
+
+      Enable:
+        default: Enabled?
+      OrgId:
+        default: AWS organization ID
+      OnlyResourceAccountId:
+        default: Only AWS account with protected resources
+      CentralAccountId:
+        default: Central backup AWS account
+      CentralSecondaryRegion:
+        default: Secondary region
+      VaultName:
+        default: Vault name
+      CopyRoleName:
+        default: IAM role name for copying backups
+      NewDeleteAfterDays:
+        default: Days (from creation) to keep an original backup
+
+      PlaceholderAdvancedParameters:
+        default: Do not change the parameters below, unless necessary!
+
+      CopyLambdaFnReservedConcurrentExecutions:
+        default: Number of parallel operations
+      CopyLambdaFnMemoryMB:
+        default: Megabytes of memory
+      CopyLambdaFnTimeoutSecs:
+        default: Seconds before timeout
+      UniqueNamePrefix:
+        default: Unique function name prefix
+
+      UpdateLifecycleLambdaFnReservedConcurrentExecutions:
+        default: Number of parallel operations
+      UpdateLifecycleLambdaFnMemoryMB:
+        default: Megabytes of memory
+      UpdateLifecycleLambdaFnTimeoutSecs:
+        default: Seconds before timeout
+
+      LogsRetainDays:
+        default: Days before deleting
+      LogLevel:
+        default: Message level
+      CloudWatchLogsKmsKey:
+        default: KMS encryption key
+
+      SqsKmsKey:
+        default: KMS encryption key
+
+Conditions:
+
+  EnableTrue: !Equals [ !Ref Enable, "true" ]
+
+  OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
+
+  InCentralAccount: !Equals [ !Ref CentralAccountId, !Ref AWS::AccountId ]
+  NotInCentralAccount: !Not [ !Condition InCentralAccount ]
+
+  InSecondaryRegion: !Equals [ !Ref CentralSecondaryRegion, !Ref AWS::Region ]
+  NotInSecondaryRegion: !Not [ !Condition InSecondaryRegion ]
+
+  InCentralAccountSecondaryRegion: !And [ !Condition InCentralAccount, !Condition InSecondaryRegion]
+  NotInCentralAccountSecondaryRegion: !Not [ !Condition InCentralAccountSecondaryRegion ]
+
+  InCentralAccountNotInSecondaryRegion: !And [ !Condition InCentralAccount, !Condition NotInSecondaryRegion]
+
+  NotInCentralAccountNotInSecondaryRegion: !And [ !Condition NotInCentralAccount, !Condition NotInSecondaryRegion ]
+
+  CloudWatchLogsKmsKeyBlank: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
+
+  SqsKmsKeyBlank: !Equals [ !Ref SqsKmsKey, "" ]
+  SqsKmsKeyCustom:
+    Fn::And:
+      - !Not [ !Condition SqsKmsKeyBlank ]
+      - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
+
+Resources:
+
+  # Administrator: Restrict iam:PassRole to prevent use of these roles for
+  # arbitrary AWS Lambda functions.
+
+  EventBridgeInvokeCopyLambdaFnInCentralAcctRole:
+    Type: AWS::IAM::Role
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      # Cross-account:
+      RoleName: !Sub "${UniqueNamePrefix}-EventBridgeInvokeCopyLambdaFnInCentralAcctRole"
+
+      Description: !Sub "For ${AWS::Region} region"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaInvoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${CentralAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceOrgID": !Ref OrgId
+
+  EventTargetErrorQueuePol:
+    Type: AWS::SQS::QueuePolicy
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Queues: [ !Ref EventTargetErrorQueue ]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RequireSsl
+            Effect: Deny
+            Principal: "*"
+            Action: sqs:*
+            Resource: "*"
+            Condition:
+              Bool: { aws:SecureTransport: "false" }
+          - Effect: Allow
+            Principal: "*"
+            Action: sqs:GetQueueAttributes
+            Resource: "*"
+          - Sid: DeadLetterSource
+            Effect: Allow
+            Principal: "*"
+            Action: sqs:SendMessage
+            Resource: "*"
+            Condition:
+              ArnEquals: { aws:SourceArn: !GetAtt Copy1ToCentralAcctCompletedCopyLambdaFnEvRule.Arn }
+          - Sid: ExclusiveSource
+            Effect: Deny
+            Principal: "*"
+            Action: sqs:SendMessage
+            Resource: "*"
+            Condition:
+              ArnNotEquals: { aws:SourceArn: !GetAtt Copy1ToCentralAcctCompletedCopyLambdaFnEvRule.Arn }
+
+  CopyLambdaFnRole:
+    Type: AWS::IAM::Role
+    Condition: NotInCentralAccountSecondaryRegion
+    Properties:
+      Description: !Sub "For ${AWS::Region} region"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+
+        - PolicyName: CloudWatchLogsCreateLogGroupIfDeleted
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !GetAtt CopyLambdaFnLogGrp.Arn
+        - PolicyName: CloudWatchLogsWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${CopyLambdaFnLogGrp}:log-stream:*"
+                # !GetAtt LogGroup.Arn ends with :* instead of allowing us to
+                # append :log-stream:* to make a log stream ARN
+
+        - PolicyName: BackupCopy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: backup:StartCopyJob
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceAccount": !Ref AWS::AccountId
+                    # This ia a global ("aws:"), not AWS Backup ("backup:")
+                    # condition key. "Resource" refers to the original backup
+                    # or the first copy, not to the "protected resource" (that
+                    # is, not to the resource that was backed up).
+                  "ForAnyValue:ArnEquals":
+                    "backup:CopyTargets":
+                      Fn::If:
+                        - InCentralAccount
+                        - !Sub "arn:${AWS::Partition}:backup:${CentralSecondaryRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
+                        - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
+                Condition:
+                  StringLike: { "iam:PassedToService": "backup.amazonaws.com" }
+
+  UpdateLifecycleLambdaFnRole:
+    Type: AWS::IAM::Role
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Description: !Sub "For ${AWS::Region} region"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+
+        - PolicyName: CloudWatchLogsCreateLogGroupIfDeleted
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !GetAtt UpdateLifecycleLambdaFnLogGrp.Arn
+        - PolicyName: CloudWatchLogsWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${UpdateLifecycleLambdaFnLogGrp}:log-stream:*"
+                # !GetAtt LogGroup.Arn ends with :* instead of allowing us to
+                # append :log-stream:* to make a log stream ARN
+
+        - PolicyName: BackupUpdate
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: backup:UpdateRecoveryPointLifecycle
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceAccount": !Ref AWS::AccountId
+                    # This is a global ("aws:"), not AWS Backup ("backup:")
+                    # condition key. "Resource" refers to the original backup,
+                    # not to the "protected resource" (that is, not to the
+                    # resource that was backed up).
+
+  EventTargetErrorQueue:
+    Type: AWS::SQS::Queue
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      DelaySeconds: 0
+      KmsMasterKeyId:
+        Fn::If:
+          - SqsKmsKeyBlank
+          - !Ref AWS::NoValue
+          - Fn::If:
+              - SqsKmsKeyCustom
+              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${SqsKmsKey}"
+              - !Ref SqsKmsKey
+      KmsDataKeyReusePeriodSeconds:
+        Fn::If:
+          - SqsKmsKeyBlank
+          - !Ref AWS::NoValue
+          - 86400  # seconds (24 hours)
+      MessageRetentionPeriod: 604800  # seconds (7 days)
+      ReceiveMessageWaitTimeSeconds: 20  # long polling (lowest cost)
+      VisibilityTimeout: 60  # seconds
+
+  CopyLambdaFnLogGrp:
+    Type: AWS::Logs::LogGroup
+    Condition: NotInCentralAccountSecondaryRegion
+    Properties:
+      RetentionInDays: !Ref LogsRetainDays
+      KmsKeyId:
+        Fn::If:
+          - CloudWatchLogsKmsKeyBlank
+          - !Ref AWS::NoValue
+          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
+
+  UpdateLifecycleLambdaFnLogGrp:
+    Type: AWS::Logs::LogGroup
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      RetentionInDays: !Ref LogsRetainDays
+      KmsKeyId:
+        Fn::If:
+          - CloudWatchLogsKmsKeyBlank
+          - !Ref AWS::NoValue
+          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
+
+  BackupCompletedCopyLambdaFnEvRule:
+    Type: AWS::Events::Rule
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Description: >-
+        After backup has been created, store first (same-region) copy in
+        central backup AWS account
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Backup Job State Change ]
+        detail:
+          state: [ COMPLETED ]
+          backupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+        version: [ "0" ]
+      Targets:
+        - Id: !Ref CopyLambdaFn
+          Arn: !GetAtt CopyLambdaFn.Arn
+      State: !If [ EnableTrue, ENABLED, DISABLED ]
+
+  Copy1ToCentralAcctCompletedCopyLambdaFnEvRule:
+    Type: AWS::Events::Rule
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      # Cross-account:
+      Name: !Sub "${UniqueNamePrefix}-Copy1ToCentralAcctCompletedCopyLambdaFnEvRule"
+
+      Description: >-
+        After first (same-region) copy of backup has been stored in central
+        backup AWS account, store second (secondary-region) copy
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Copy Job State Change ]
+        detail:
+          state: [ COMPLETED ]
+          sourceBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+          destinationBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+        version: [ "0" ]
+      Targets:
+        - Id: !Sub "${UniqueNamePrefix}-CopyLambdaFn"
+          RoleArn: !GetAtt EventBridgeInvokeCopyLambdaFnInCentralAcctRole.Arn
+          Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${CentralAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
+          DeadLetterConfig:
+            Arn: !GetAtt EventTargetErrorQueue.Arn
+      State: !If [ EnableTrue, ENABLED, DISABLED ]
+
+  # Administrator: Block other invocations
+  BackupCompletedCopyLambdaFnEvRulePerm:
+    Type: AWS::Lambda::Permission
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CopyLambdaFn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
+
+  Copy1ToCentralAcctCompletedCopyLambdaFnEvRulePerm:
+    Type: AWS::Lambda::Permission
+    Condition: InCentralAccountNotInSecondaryRegion
+    Properties:
+      SourceArn:
+        Fn::If:
+          - OnlyResourceAccountIdBlank
+          - !Ref AWS::NoValue
+          - !Sub "arn:aws:events:${AWS::Region}:${OnlyResourceAccountId}:rule/${UniqueNamePrefix}-Copy1ToCentralAcctCompletedCopyLambdaFnEvRule"
+      PrincipalOrgID: !Ref OrgId
+      Principal:
+        Fn::If:
+          - OnlyResourceAccountIdBlank
+          - "*"
+          - !Sub "arn:aws:iam::${OnlyResourceAccountId}:role/${UniqueNamePrefix}-EventBridgeInvokeCopyLambdaFnInCentralAcctRole"
+      Action: lambda:InvokeFunction
+      FunctionName: !Sub "${UniqueNamePrefix}-CopyLambdaFn"
+
+  CopyCompletedEvRuleUpdateLifecycleLambdaFn:
+    Type: AWS::Events::Rule
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Description: >-
+        After first (same-region) copy has been stored in central backup AWS
+        account, schedule deletion of original backup
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Copy Job State Change ]
+        detail:
+          state: [ COMPLETED ]
+          sourceBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+          destinationBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+        version: [ "0" ]
+      Targets:
+        - Id: !Ref UpdateLifecycleLambdaFn
+          Arn: !GetAtt UpdateLifecycleLambdaFn.Arn
+      State: !If [ EnableTrue, ENABLED, DISABLED ]
+
+  # Administrator: Block other invocations
+  UpdateLifecycleLambdaFnPerm:
+    Type: AWS::Lambda::Permission
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UpdateLifecycleLambdaFn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CopyCompletedEvRuleUpdateLifecycleLambdaFn.Arn
+
+  CopyLambdaFn:
+    Condition: NotInCentralAccountSecondaryRegion
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName:
+        Fn::If:
+          - InCentralAccount
+          - !Sub "${UniqueNamePrefix}-CopyLambdaFn"  # Cross-account
+          - !Ref AWS::NoValue  # Same-account, prefer CloudFormation naming
+      Role: !GetAtt CopyLambdaFnRole.Arn
+      ReservedConcurrentExecutions: !Ref CopyLambdaFnReservedConcurrentExecutions
+      Timeout: !Ref CopyLambdaFnTimeoutSecs
+      MemorySize: !Ref CopyLambdaFnMemoryMB
+      LoggingConfig:
+        LogGroup: !Ref CopyLambdaFnLogGrp
+        LogFormat: JSON
+        SystemLogLevel: WARN
+        ApplicationLogLevel: !Ref LogLevel
+      Architectures:
+        - arm64
+      Runtime: python3.13
+      # To avoid making users build a source bundle and distribute it to a
+      # bucket in every target region (an AWS Lambda requirement when using
+      # S3), supply shared, multi-handler source code in-line...
+      Environment:
+        Variables:
+          NEW_DELETE_AFTER_DAYS: "0"  # Not needed by this handler
+          COPY_ROLE_ARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
+          BACKUP_VAULT_NAME: !Ref VaultName
+          DESTINATION_BACKUP_VAULT_ARN:
+            Fn::If:
+              - InCentralAccount
+              - !Sub "arn:${AWS::Partition}:backup:${CentralSecondaryRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
+              - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+      Handler: index.lambda_handler_copy
+      Code:
+        ZipFile: |
+          #!/usr/bin/env python3
+
+          import os
+
+          def lambda_handler_copy(event, context):
+            print("Hello")
+            print(os.environ)
+            print(event)
+
+          def lambda_handler_update_lifecycle(event, context):
+            print("Goodbye")
+            print(os.environ)
+            print(event)
+        # ZIPFILE_END
+
+  UpdateLifecycleLambdaFn:
+    Type: AWS::Lambda::Function
+    Condition: NotInCentralAccountNotInSecondaryRegion
+    Properties:
+      Role: !GetAtt UpdateLifecycleLambdaFnRole.Arn
+      ReservedConcurrentExecutions: !Ref UpdateLifecycleLambdaFnReservedConcurrentExecutions
+      Timeout: !Ref UpdateLifecycleLambdaFnTimeoutSecs
+      MemorySize: !Ref UpdateLifecycleLambdaFnMemoryMB
+      LoggingConfig:
+        LogGroup: !Ref UpdateLifecycleLambdaFnLogGrp
+        LogFormat: JSON
+        SystemLogLevel: WARN
+        ApplicationLogLevel: !Ref LogLevel
+      Architectures:
+        - arm64
+      Runtime: python3.13
+      # To avoid making users build a source bundle and distribute it to a
+      # bucket in every target region (an AWS Lambda requirement when using
+      # S3), supply shared, multi-handler source code in-line...
+      Environment:
+        Variables:
+          NEW_DELETE_AFTER_DAYS: !Ref NewDeleteAfterDays
+          COPY_ROLE_ARN: ""  # Not needed by this handler
+          BACKUP_VAULT_NAME: !Ref VaultName
+          DESTINATION_BACKUP_VAULT_ARN: ""  # Not needed by this handler
+      Handler: index.lambda_handler_update_lifecycle
+      Code:
+        ZipFile: |
+          #!/usr/bin/env python3
+
+          import os
+
+          def lambda_handler_copy(event, context):
+            print("Hello")
+            print(os.environ)
+            print(event)
+
+          def lambda_handler_update_lifecycle(event, context):
+            print("Goodbye")
+            print(os.environ)
+            print(event)
+        # ZIPFILE_END
