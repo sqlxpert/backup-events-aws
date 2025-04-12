@@ -111,19 +111,18 @@ Jump to:
     Switch to the backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
-13. In case of trouble, check:
+13. In case of trouble, focus on the main region and check, in both accounts
+    unless otherwise noted:
 
-    - The
-      [BackupEvents CloudWatch log groups](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
-      in both accounts.
+    - The [BackupEvents CloudWatch log groups](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
 
     - The `BackupEvents-ErrorTarget`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
-      in the main account.
+      (not in the backup account)
 
-    - [CloudTrail &rarr; Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events)
-      in both accounts. Tips: Change "Read-only" to `true` to see more events.
-      Select the gear icon at the right to add the "Error code" column.
+    - [CloudTrail &rarr; Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
+      Tips: Change "Read-only" to `true` to see more events. Select the gear
+      icon at the right to add the "Error code" column.
 
 14. Delete the EFS file system and all of its AWS Backup backups.
 
