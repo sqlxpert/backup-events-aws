@@ -132,8 +132,8 @@ Jump to:
 ### Minimum Installation Layout
 
 |Region&rarr;<br>&darr;Account||Main|Backup|
-|:---|:---:|:---:|:---:|
-|||`us-east-1`|`us-west-2`|
+|:---|:---|:---:|:---:|
+||Region code&rarr;<br>&darr;Account number|`us-east-1`|`us-west-2`|
 |Main|`000022224444`|All resources||
 |Backup|`999977775555`|All backups|All copies of backups|
 
@@ -146,8 +146,8 @@ Jump to:
 ### Typical Installation Layout - Extra Region
 
 |Region&rarr;<br>&darr;Account||USA East Coast|USA West Coast|Backup|
-|:---|:---:|:---:|:---:|:---:|
-|||`us-east-1`|`us-west-1`|`us-west-2`|
+|:---|:---|:---:|:---:|:---:|
+||Region code&rarr;<br>&darr;Account number|`us-east-1`|`us-west-1`|`us-west-2`|
 |Web server|`000022224444`|Resources|Resources||
 |API layer|`111133335555`|Resources|Resources||
 |Database|`888866664444`|Resources|Resources||
