@@ -102,9 +102,10 @@ Parameters:
     Type: String
     Description: >-
       Generally, leave this blank.
-      If you have a suitably-configured customer-managed multi-region KMS key
-      for the sample vaults, specify "ACCOUNT:key/KEY_ID", where KEY_ID begins
-      with "mrk-". See CreateSampleVault (above) for the requirements.
+      If you are using the sample vaults but bringing your own key (BYOK),
+      specify "ACCOUNT:key/KEY_ID", where KEY_ID begins with "mrk-". This must
+      be a suitably-configured customer-managed multi-region KMS key. See
+      CreateSampleVault (above) for the requirements.
     Default: ""
 
   VaultName:
