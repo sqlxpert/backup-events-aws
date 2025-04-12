@@ -76,6 +76,7 @@ class Backup():
   https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
   """
   _boto3_client = None
+
   action_kwargs_base = get_backup_action_kwargs_base()
 
   _from_job_id_key = "backupJobId"
@@ -210,7 +211,7 @@ class BackupCopy(Backup):
     return all([self.from_job_id, self.from_backup_arn, self.arn])
 
 
-def get_update_lifecycle_kwargs(describe_resp):
+def get_update_lifecycle_kwargs(describe_resp, today_date):
   """Take a describe response, return update_recovery_point_lifecycle kwargs
 
   Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -231,8 +232,7 @@ def get_update_lifecycle_kwargs(describe_resp):
   lifecycle = dict(describe_resp.get("Lifecycle", {}))  # Update the copy...
 
   creation_date = describe_resp["CreationDate"].date()
-  today = datetime.date.today()
-  days_old = (today - creation_date).days
+  days_old = (today_date - creation_date).days + 1
 
   delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
   delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
@@ -248,13 +248,13 @@ def get_update_lifecycle_kwargs(describe_resp):
     delete_after_days_maximum = 0
   elif cold_storage_after_days is not None:
     if (storage_class == "WARM") and (days_old < cold_storage_after_days):
-      # Has not yet transitioned cold storage, and is not scheduled to, today
+      # Has not yet transitioned cold storage, and is not scheduled to, soon
       lifecycle.update({
         "OptInToArchiveForSupportedResources": False,
         "MoveToColdStorageAfterDays": -1,
       })
     else:
-      # Has already transitioned cold storage, or is scheduled to, today
+      # Has already transitioned cold storage, or is scheduled to, soon
       delete_after_days_minima.append(cold_storage_after_days + 90)
   elif storage_class == "COLD":
     # In case AWS Backup someday supports creation in/non-scheduled move to
@@ -296,7 +296,9 @@ def lambda_handler_update_lifecycle(event, context):  # pylint: disable=unused-a
   kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
   describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
   if boto3_success(describe_resp):
-    kwargs_lifecycle = get_update_lifecycle_kwargs(describe_resp)
+    kwargs_lifecycle = get_update_lifecycle_kwargs(
+      describe_resp, datetime.date.today()
+    )
     if kwargs_lifecycle:
       backup.do_action(
         "update_recovery_point_lifecycle",

@@ -10,7 +10,11 @@ Parameters:
 
   PlaceholderSuggestedStackName:
     Type: String
-    Default: "AWSBackupEvents"
+    Default: "BackupEvents"
+
+  PlaceholderSuggestedStackSetDescription:
+    Type: String
+    Default: "Cross-account, cross-region backups with AWS Backup and EventBridge"
 
   PlaceholderHelp:
     Type: String
@@ -55,11 +59,11 @@ Parameters:
     Type: Number
     Description: >-
       After a backup has been copied to the backup account, the original
-      backup can be deleted. Its lifecycle will be updated accordingly. Days
-      are counted from when it was created. For incremental backups -- such as
-      EBS volume snapshots (including those making up EC2 images AMIs), and
-      RDS (but not Aurora) database snapshots -- do not reduce this below the
-      number of days between scheduled AWS Backup backups. See
+      backup can be deleted; its lifecycle will be updated. Count days from
+      when it was created. For incremental backups -- such as EBS volume
+      snapshots (including those making up EC2 images AMIs), RDS (but not
+      Aurora) database snapshots, and EFS file system backups -- do not reduce
+      this below the number of days between scheduled AWS Backup backups. See
       https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html
     MinValue: 1
     Default: 7
@@ -73,18 +77,19 @@ Parameters:
   CreateSampleVault:
     Type: String
     Description: >-
-      (1) Within the backup account, a vault is required in the backup region.
-      For every region containing resources to back up, a vault is required in
-      the backup account (and its vault access policy must allow the backup
-      role in every resource account to "backup:CopyIntoBackupVault" ), as
-      well as in every resource account. Generally, all vaults must be
+      (1) Within the backup account, vaults are required in the backup and
+      alternate backup regions. For every region containing resources to back
+      up, a vault is required in the backup account (and its vault access
+      policy must allow the backup role in every resource account to
+      "backup:CopyIntoBackupVault" ), as well as in every resource account (to
+      receive original backups). For a scalable solution, all vaults must be
       encrypted with the same customer-managed multi-region KMS key, and the
       key policies of the primary and regional replica keys must allow
       cross-account key usage, usage for AWS Backup, and usage for underlying
-      AWS services.
-      (2) The sample vaults are encrypted with the AWS-managed default
-      "aws/backup" KMS key in each account and region. They can only be used
-      to demonstrate backing up unencrypted EBS file systems.
+      AWS services (depending on the types of resources that you back up).
+      (2) By default, the sample vaults are encrypted with the AWS-managed
+      "aws/backup" KMS key in each account and region, so they can only be
+      used to demonstrate backing up unencrypted EFS file systems.
       (3) Combining KMS encryption, AWS Backup, multiple resource types,
       multiple regions, and multiple accounts is an advanced topic. See
       https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html
@@ -93,10 +98,24 @@ Parameters:
       - "false"
       - "true"
 
+  VaultCustomKmsKey:
+    Type: String
+    Description: >-
+      Generally, leave this blank.
+      If you have a suitably-configured customer-managed multi-region KMS key
+      for the sample vaults, specify "ACCOUNT:key/KEY_ID", where KEY_ID begins
+      with "mrk-". See CreateSampleVault (above) for the requirements.
+    Default: ""
+
   VaultName:
     Type: String
-    Description: (Not ARN!) All required vaults must have the same name.
-    Default: "AWSBackupEvents-Sample"
+    Description: >-
+      (Not ARN!) All required vaults must have the same name. Change this if
+      you are bringing your own vaults (BYOV), or if you are using the sample
+      vaults but you need to create multiple stacks from the same template, in
+      the same accounts and regions, for example, during a blue/green
+      deployment.
+    Default: "BackupEvents-Sample"
 
   CopyRoleName:
     Type: String
@@ -175,10 +194,10 @@ Parameters:
   UniqueNamePrefix:
     Type: String
     Description: >-
-      Change only if you need to create multiple stacks from the same
-      template, in the same AWS accounts and regions, for example, during a
+      Change this only if you need to create multiple stacks from the same
+      template, in the same accounts and regions, for example, during a
       blue/green deployment.
-    Default: "AWSBackupEvents"
+    Default: "BackupEvents"
 
   UpdateLifecycleLambdaFnMemoryMB:
     Type: Number
@@ -200,6 +219,7 @@ Metadata:
       - Label: { default: For Reference }
         Parameters:
           - PlaceholderSuggestedStackName
+          - PlaceholderSuggestedStackSetDescription
           - PlaceholderHelp
 
       - Label: { default: Essential }
@@ -218,6 +238,7 @@ Metadata:
       - Label: { default: Vaults }
         Parameters:
           - CreateSampleVault
+          - VaultCustomKmsKey
           - VaultName
           - CopyRoleName
           - OnlyResourceAccountId
@@ -243,9 +264,11 @@ Metadata:
     ParameterLabels:
 
       PlaceholderSuggestedStackName:
-        default: Suggested stack name
+        default: Suggested stack or StackSet name
+      PlaceholderSuggestedStackSetDescription:
+        default: Suggested StackSet description
       PlaceholderHelp:
-        default: For help with this stack, see
+        default: For help, see
 
       Enable:
         default: Enabled?
@@ -265,6 +288,8 @@ Metadata:
 
       CreateSampleVault:
         default: Create sample vaults?
+      VaultCustomKmsKey:
+        default: Custom KMS key for sample vaults
       VaultName:
         default: Vault name
       CopyRoleName:
@@ -302,9 +327,13 @@ Conditions:
   InBackupAccount: !Equals [ !Ref AWS::AccountId, !Ref BackupAccountId ]
   NotInBackupAccount: !Not [ !Condition InBackupAccount ]
 
-  OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
-
   CreateSampleVaultTrue: !Equals [ !Ref CreateSampleVault, "true" ]
+
+  VaultCustomKmsKeyNo: !Equals [ !Ref VaultCustomKmsKey, "" ]
+  InBackupAccountAndVaultCustomKmsKeyNo:
+    Fn::And: [ !Condition InBackupAccount, !Condition VaultCustomKmsKeyNo ]
+
+  OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
 
   CloudWatchLogsKmsKeyNo: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
 
@@ -492,10 +521,15 @@ Resources:
     Condition: CreateSampleVaultTrue
     Properties:
       BackupVaultName: !Ref VaultName
+      EncryptionKeyArn:
+        Fn::If:
+          - VaultCustomKmsKeyNo
+          - !Ref AWS::NoValue
+          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${VaultCustomKmsKey}"
       BackupVaultTags:
         Note:
           Fn::If:
-            - InBackupAccount
+            - InBackupAccountAndVaultCustomKmsKeyNo
             - >-
                 Only for copies of copies of EFS backups.
                 Prior copy: same account and other region and encrypted with
@@ -616,7 +650,7 @@ Resources:
     Condition: InBackupAccount
     Properties:
       # AWS Lambda does not allow direct editing of a Lambda function's
-      # resource access policy. The available PutPermission API does not
+      # resource access policy. The available AddPermission API does not
       # accept the * wildcard in the AccountId position of ARNs. Therefore,
       # unless we're expecting backups from only one account, we must allow
       # any Principal in the organization, against any SouceArn .
@@ -918,7 +952,7 @@ Resources:
               return all([self.from_job_id, self.from_backup_arn, self.arn])
 
 
-          def get_update_lifecycle_kwargs(describe_resp):
+          def get_update_lifecycle_kwargs(describe_resp, today_date):
             """Take a describe response, return update_recovery_point_lifecycle kwargs
 
             Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -939,8 +973,7 @@ Resources:
             lifecycle = dict(describe_resp.get("Lifecycle", {}))  # Update the copy...
 
             creation_date = describe_resp["CreationDate"].date()
-            today = datetime.date.today()
-            days_old = (today - creation_date).days
+            days_old = (today_date - creation_date).days + 1
 
             delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
             delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
@@ -956,13 +989,13 @@ Resources:
               delete_after_days_maximum = 0
             elif cold_storage_after_days is not None:
               if (storage_class == "WARM") and (days_old < cold_storage_after_days):
-                # Has not yet transitioned cold storage, and is not scheduled to, today
+                # Has not yet transitioned cold storage, and is not scheduled to, soon
                 lifecycle.update({
                   "OptInToArchiveForSupportedResources": False,
                   "MoveToColdStorageAfterDays": -1,
                 })
               else:
-                # Has already transitioned cold storage, or is scheduled to, today
+                # Has already transitioned cold storage, or is scheduled to, soon
                 delete_after_days_minima.append(cold_storage_after_days + 90)
             elif storage_class == "COLD":
               # In case AWS Backup someday supports creation in/non-scheduled move to
@@ -1004,7 +1037,9 @@ Resources:
             kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
             describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
             if boto3_success(describe_resp):
-              kwargs_lifecycle = get_update_lifecycle_kwargs(describe_resp)
+              kwargs_lifecycle = get_update_lifecycle_kwargs(
+                describe_resp, datetime.date.today()
+              )
               if kwargs_lifecycle:
                 backup.do_action(
                   "update_recovery_point_lifecycle",
@@ -1253,7 +1288,7 @@ Resources:
               return all([self.from_job_id, self.from_backup_arn, self.arn])
 
 
-          def get_update_lifecycle_kwargs(describe_resp):
+          def get_update_lifecycle_kwargs(describe_resp, today_date):
             """Take a describe response, return update_recovery_point_lifecycle kwargs
 
             Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -1274,8 +1309,7 @@ Resources:
             lifecycle = dict(describe_resp.get("Lifecycle", {}))  # Update the copy...
 
             creation_date = describe_resp["CreationDate"].date()
-            today = datetime.date.today()
-            days_old = (today - creation_date).days
+            days_old = (today_date - creation_date).days + 1
 
             delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
             delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
@@ -1291,13 +1325,13 @@ Resources:
               delete_after_days_maximum = 0
             elif cold_storage_after_days is not None:
               if (storage_class == "WARM") and (days_old < cold_storage_after_days):
-                # Has not yet transitioned cold storage, and is not scheduled to, today
+                # Has not yet transitioned cold storage, and is not scheduled to, soon
                 lifecycle.update({
                   "OptInToArchiveForSupportedResources": False,
                   "MoveToColdStorageAfterDays": -1,
                 })
               else:
-                # Has already transitioned cold storage, or is scheduled to, today
+                # Has already transitioned cold storage, or is scheduled to, soon
                 delete_after_days_minima.append(cold_storage_after_days + 90)
             elif storage_class == "COLD":
               # In case AWS Backup someday supports creation in/non-scheduled move to
@@ -1339,7 +1373,9 @@ Resources:
             kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
             describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
             if boto3_success(describe_resp):
-              kwargs_lifecycle = get_update_lifecycle_kwargs(describe_resp)
+              kwargs_lifecycle = get_update_lifecycle_kwargs(
+                describe_resp, datetime.date.today()
+              )
               if kwargs_lifecycle:
                 backup.do_action(
                   "update_recovery_point_lifecycle",
