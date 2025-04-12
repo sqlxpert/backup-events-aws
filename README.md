@@ -29,9 +29,9 @@
 Jump to:
 [Quick Start](#quick-start)
 &bull;
-[Minimum Layout](#minimum-installation-layout)
+[Minimum Account Layout](#minimum-account-layout)
 &bull;
-[Multi-Account, Multi-Region](#multi-account-multi-region-cloudformation-stackset)
+[Multi-Account, Multi-Region Install](#multi-account-multi-region-cloudformation-stackset)
 &bull;
 [Security](#security)
 
@@ -129,11 +129,11 @@ Jump to:
 
 ## Accounts and Regions
 
-### Minimum Installation Layout
+### Minimum Account Layout
 
 |Region&rarr;<br>&darr;Account||Main|Backup|
 |:---|:---|:---:|:---:|
-||Region code&rarr;<br>&darr;Account number|`us-east-1`|`us-west-2`|
+||Region code&rarr;<br>&darr;Account ID|`us-east-1`|`us-west-2`|
 |Main|`000022224444`|All resources||
 |Backup|`999977775555`|All backups|All copies of backups|
 
@@ -143,11 +143,11 @@ Jump to:
   - There is nothing to install in the backup region of the only resource
     account, if you don't keep any resources there.
 
-### Typical Installation Layout - Extra Region
+### Typical Account Layout - Extra Region
 
 |Region&rarr;<br>&darr;Account||USA East Coast|USA West Coast|Backup|
 |:---|:---|:---:|:---:|:---:|
-||Region code&rarr;<br>&darr;Account number|`us-east-1`|`us-west-1`|`us-west-2`|
+||Region code&rarr;<br>&darr;Account ID|`us-east-1`|`us-west-1`|`us-west-2`|
 |Web server|`000022224444`|Resources|Resources||
 |API layer|`111133335555`|Resources|Resources||
 |Database|`888866664444`|Resources|Resources||
