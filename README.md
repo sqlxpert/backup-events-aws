@@ -15,13 +15,12 @@
   - Copy backups to a second region, whether for compliance, disaster
     recovery preparedness, or just peace-of-mind.
 
-- Get started quickly, or customize:
+- Get started quickly, or customize.
 
   - Try sample vaults, or "bring your own vaults" (BYOV).
 
-  - Try sample vaults with the default `aws/backup` KMS key, which lets you
-    experiment by backing up unencrypted EFS file systems -- or "bring your
-    own key" (BYOK).
+  - Try the default `aws/backup` KMS key, which lets you experiment by backing
+    up unencrypted EFS file systems -- or "bring your own key" (BYOK).
 
   - Create 3 CloudFormation stacks from the same template for a minimum
     installation, or deploy across multiple accounts and regions by creating a
@@ -41,7 +40,7 @@ Jump to:
  1. Check the prerequisites:
 
     - AWS Organizations is configured, and your main and backup AWS accounts
-       are part of your organization.
+      are in your organization.
     - In the management account, under
       [AWS Organizations &rarr; Services &rarr; AWS Backup](https://console.aws.amazon.com/organizations/v2/home/services/AWS%20Backup),
       "Trusted access" is enabled. Note your organization ID, which starts with
@@ -49,25 +48,24 @@ Jump to:
     - Under
       [AWS Organizations &rarr; Policies](https://console.aws.amazon.com/organizations/v2/home/policies),
       "Service control policies" are enabled. (This solution does not create any
-      SCPs.) It's also a good idea to enable "Resource control policies" (new)
-      and "Backup policies" (potentially useful).
+      SCPs.)
     - Under
       [AWS Backup &rarr; My account &rarr; Settings &rarr; Cross-account management](https://console.aws.amazon.com/backup/home#/settings),
-      all of the options are enabled, including "Cross-account monitoring" and
+      all options are enabled, including "Cross-account monitoring" and
       "Cross-account backup".
-    - Under "Service opt-in" (scroll up), EFS (for this quick-start) and other
-      services you would like to use with AWS Backup are enabled.
+    - Under "Service opt-in" (scroll up), EFS (for this quick-start) and any
+      other relevant services are enabled.
     - [Service Quotas &rarr; AWS services &rarr; AWS Lambda &rarr; Concurrent executions](https://console.aws.amazon.com/servicequotas/home/services/lambda/quotas/L-B99A9384)
       has an "Applied account-level quota value" of 1,000 or more, not 10.
       Request and wait for an increase, if necessary. Repeat this check in each
-      account where you will install Backup Events.
+      account where you intend to install Backup Events.
 
  2. Log in to the AWS Console as an administrator, in the AWS account where
     you would like your backups to be stored.
 
  3. Switch to your main region, that is, the region where most of your
-    resources (in another account) are stored. In addition to being your main
-    region, this one will also be the alternate for your backup region.
+    resources (in another account) are. Your main region doubles as the
+    _alternate_ for your backup region.
 
  4. Create a
     [CloudFormation stack](https://console.aws.amazon.com/cloudformation/home)
@@ -76,24 +74,23 @@ Jump to:
     [backup_events_aws.yaml](/backup_events_aws.yaml?raw=true)
     [right-click to save as...]. On the next page, set:
 
-     - Stack name _(Copy and paste this from the "For Reference" section)_
+     - Stack name _(Copy and paste this from "For Reference")_
      - AWS organization ID
-     - Backup AWS account _(The account you started in)_
-     - Backup region _(A different region, typically one that you do not use
-       for other purposes)_
-     - Alternate for backup region _(The region you're in now)_
+     - Backup AWS account _(From Step 2)_
+     - Backup region _(A different region that you do not use much)_
+     - Alternate for backup region _(From Step 3)_
   
  5. Stay in the same AWS account but switch to your backup region.
  
  6. Create a stack from the same template. Set **exactly the same parameter
-    values** as in Step 4.
+    values** from Step 4.
  
  7. Switch to your main AWS account.
 
  8. Switch to your main region, from Step 3.
  
  9. Create a stack from the same template. Set **exactly the same parameter
-    values** as in Step 4.
+    values** from Step 4.
 
 10. Create an
     [EFS file system](https://console.aws.amazon.com/efs/home#/file-systems).
@@ -104,7 +101,7 @@ Jump to:
 
 11. When your EFS file system is ready, go to
     [AWS Backup &rarr; My account &rarr; Create on-demand backup](https://console.aws.amazon.com/backup/home#/dashboard).
-    Change the "Resource type" and select your file system. Change the
+    Change the "Resource type" to EFS and select your file system. Change the
     "Backup vault" to "BackupEvents-Sample" **(important)**.
 
 12. Watch for completion of the backup job, and then creation and completion
@@ -114,24 +111,21 @@ Jump to:
     Switch to the backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
-13. If any backup copies are missing, check the
-    [BackupEvents CloudWatch log groups](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
-    in both accounts, always in the main region.
+13. In case of trouble, check:
 
-    You can also check the `BackupEvents-ErrorTarget` in
-    [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues). It is
-    present only in the main account, in the main region.
+    - The
+      [BackupEvents CloudWatch log groups](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
+      in both accounts.
 
-    [CloudTrail &rarr; Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events)
-    in both accounts, always in the main region, might shed light on any
-    permissions problems. Tips: Change "Read-only" to `true` to see
-    additional types of events. Select the gear icon at the right to add the
-    "Error code" column.
+    - The `BackupEvents-ErrorTarget`
+      [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
+      in the main account.
 
-Jump to:
-[Extra Setup](#extra-setup)
-&bull;
-[Multi-Account, Multi-Region](#multi-account-multi-region-cloudformation-stackset)
+    - [CloudTrail &rarr; Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events)
+      in both accounts. Tips: Change "Read-only" to `true` to see more events.
+      Select the gear icon at the right to add the "Error code" column.
+
+14. Delete the EFS file system and all of its AWS Backup backups.
 
 ## Accounts and Regions
 
