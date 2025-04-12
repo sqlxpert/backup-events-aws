@@ -23,7 +23,7 @@
     up unencrypted EFS file systems -- or "bring your own key" (BYOK).
 
   - Create 3 CloudFormation stacks from the same template for a minimum
-    installation, or deploy across multiple accounts and regions by creating a
+    installation, or deploy across many accounts and regions by creating a
     CloudFormation StackSet.
 
 Jump to:
@@ -56,9 +56,9 @@ Jump to:
     - Under "Service opt-in" (scroll up), EFS (for this quick-start) and any
       other relevant services are enabled.
     - [Service Quotas &rarr; AWS services &rarr; AWS Lambda &rarr; Concurrent executions](https://console.aws.amazon.com/servicequotas/home/services/lambda/quotas/L-B99A9384)
-      has an "Applied account-level quota value" of 1,000 or more, not 10.
-      Request and wait for an increase, if necessary. Repeat this check in each
-      account where you intend to install Backup Events.
+      has an "Applied account-level quota value" significantly greater than
+      10. If necessary, request and wait for an increase. Repeat this check
+      for each account where you intend to install Backup Events.
 
  2. Log in to the AWS Console as an administrator, in the AWS account where
     you would like your backups to be stored.
@@ -102,7 +102,7 @@ Jump to:
 11. When your EFS file system is ready, go to
     [AWS Backup &rarr; My account &rarr; Create on-demand backup](https://console.aws.amazon.com/backup/home#/dashboard).
     Change the "Resource type" to EFS and select your file system. Change the
-    "Backup vault" to "BackupEvents-Sample" **(important)**.
+    "Backup vault" to BackupEvents-Sample **(important)**.
 
 12. Watch for completion of the backup job, and then creation and completion
     of a copy job. At that point, the original backup should show a "Retention
@@ -137,7 +137,7 @@ Jump to:
 |Main|`000022224444`|All resources||
 |Backup|`999977775555`|All backups|All copies of backups|
 
-- A minimum layout requires 2 regions, 2 AWS accounts, and 3 CloudFormation
+- The minimum layout involves 2 regions, 2 AWS accounts, and 3 CloudFormation
   StackSet member instances (or 3 ordinary CloudFormation stacks, created from
   the same template).
   - There is nothing to install in the backup region of the only resource
@@ -177,12 +177,11 @@ Jump to:
    - StackSet name
    - StackSet description
    
-   Then, set the other paramaters as indicated in Step 4 of the
+   For other essential parameters, see Step 4 of the
    [quick-start](#quick-start).
 
-4. Deploy to your resource account(s) and backup account, in your
-   main/resource region(s) (including the alternate for your backup region)
-   and your backup region.
+4. Deploy to your main/resource account(s) and your backup account, in your
+   main/resource region(s) and your backup region.
 
 ### Installation with Terraform
 
@@ -210,7 +209,7 @@ software at your own risk. You are encouraged to evaluate the source code._
 
 ### Security Design Goals
 
-- Least-privilege roles for the AWS Lambda function.
+- Least-privilege roles for the AWS Lambda functions.
 
 - A least-privilege queue policy for the "dead letter" queue.
 
@@ -218,7 +217,7 @@ software at your own risk. You are encouraged to evaluate the source code._
   and broken down into discrete statements by service, resource or principal.
 
 - Optional encryption at rest with the AWS Key Management System (KMS), for
-  Lambda function logs.
+  logs.
 
 - Tolerance for slow operations and clock drift in a distributed system.
   The function to schedule original backups for deletion adds a full-day
@@ -230,8 +229,8 @@ software at your own risk. You are encouraged to evaluate the source code._
   `BackupEvents` in ARNs and in the automatic `aws:cloudformation:stack-name`
   tag.
 
-- Prevent people from directly invoking the AWS Lambda function and from
-  passing the function role to arbitrary functions.
+- Prevent people from directly invoking the AWS Lambda functions and from
+  passing the function roles to arbitrary functions.
 
 - Log infrastructure changes using AWS CloudTrail, and set up alerts.
 
