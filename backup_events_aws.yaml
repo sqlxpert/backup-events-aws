@@ -2,29 +2,67 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Description: |-
-  Back up RDS/Aurora databases, etc. to a different AWS account and region
+  Cross-account, cross-region backups with AWS Backup and EventBridge
 
   github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
 
 Parameters:
 
-  PlaceholderHelp:
-    Type: String
-    Default: "https://github.com/sqlxpert/backup-events-aws"
-
   PlaceholderSuggestedStackName:
     Type: String
     Default: "AWSBackupEvents"
 
+  PlaceholderHelp:
+    Type: String
+    Default: "github.com/sqlxpert/backup-events-aws"
+
   Enable:
     Type: String
     Description: >-
-      Whether to enable or disable the EventBridge rules that trigger this
-      tool's AWS Lambda functions
+      No catch-up feature! Backups completed while this is false will not be
+      copied to the backup account, even after the setting is toggled back to
+      true. Copies completed while this is false will not be copied to the
+      backup region, even after the setting is toggled back to true.
     Default: "true"
     AllowedValues:
       - "false"
       - "true"
+
+  OrgId:
+    Type: String
+    Description: >-
+      Example: "o-abcde12345"
+
+  BackupAccountId:
+    Type: String
+    Description: >-
+      An account different from the one(s) containing resources to back up.
+      Backups will first be copied to this account, with no change in region.
+
+  BackupRegion:
+    Type: String
+    Description: >-
+      Example: "us-east-1". Within the backup account, backup copies that
+      originated in other regions will be copied to this second region.
+
+  BackupRegionAlternate:
+    Type: String
+    Description: >-
+      Within the backup account, backup copies that originated in the backup
+      region will be copied to this alternate second region.
+
+  NewDeleteAfterDays:
+    Type: Number
+    Description: >-
+      After a backup has been copied to the backup account, the original
+      backup can be deleted. Its lifecycle will be updated accordingly. Days
+      are counted from when it was created. For incremental backups -- such as
+      EBS volume snapshots (including those making up EC2 images AMIs), and
+      RDS (but not Aurora) database snapshots -- do not reduce this below the
+      number of days between scheduled AWS Backup backups. See
+      https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html
+    MinValue: 1
+    Default: 7
 
   PlaceholderAdvancedParameters:
     Type: String
@@ -32,75 +70,84 @@ Parameters:
     AllowedValues:
       - ""
 
-  OrgId:
+  CreateSampleVault:
     Type: String
     Description: >-
-      ID of your AWS Organizations organization (for example, "o-abcde12345").
-      This allows EventBridge to trigger the second (secondary-region) copy
-      inside the central backup AWS account, after the first (same-region)
-      copy has completed.
-
-  OnlyResourceAccountId:
-    Type: String
-    Description: >-
-      Account number of the AWS account that contains protected resources;
-      backups originate in this account. Leave blank if your protected
-      resources are in multiple AWS accounts. In that case, less specific,
-      organization-wide permissions will be used.
-
-  CentralAccountId:
-    Type: String
-    Description: >-
-      Account number of the central backup AWS account, to which backups
-      will be copied. The first copy is stored in the same region as the
-      protected resource and its original backup.
-
-  CentralSecondaryRegion:
-    Type: String
-    Description: >-
-      Region code (for example, "us-east-1") of the region in which the second
-      copy in the central backup AWS account will be stored. This region
-      should be different from the regions that contain protected resources,
-      that is, no backups should originate in this region.
-
-  NewDeleteAfterDays:
-    Type: Number
-    Description: >-
-      How many days (from creation) to keep an original backup, after the
-      first copy (to the central backup AWS account, but still in the same
-      region) has completed. For incremental backups -- such as EBS volume
-      snapshots (including those making up EC2 images AMIs), and RDS (but not
-      Aurora) database snapshots, set this to at least the number of days
-      between backups. See the "Important" warning in
-      https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html
-    Default: 7
+      (1) Within the backup account, a vault is required in the backup region.
+      For every region containing resources to back up, a vault is required in
+      the backup account (and its vault access policy must allow the backup
+      role in every resource account to "backup:CopyIntoBackupVault" ), as
+      well as in every resource account. Generally, all vaults must be
+      encrypted with the same customer-managed multi-region KMS key, and the
+      key policies of the primary and regional replica keys must allow
+      cross-account key usage, usage for AWS Backup, and usage for underlying
+      AWS services.
+      (2) The sample vaults are encrypted with the AWS-managed default
+      "aws/backup" KMS key in each account and region. They can only be used
+      to demonstrate backing up unencrypted EBS file systems.
+      (3) Combining KMS encryption, AWS Backup, multiple resource types,
+      multiple regions, and multiple accounts is an advanced topic. See
+      https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html
+    Default: "true"
+    AllowedValues:
+      - "false"
+      - "true"
 
   VaultName:
     Type: String
-    Description: >-
-      Name (not complete ARN) of the vaults from which and to which backups
-      will be copied. This tool requires vaults of the same name in all
-      relevant AWS accounts and regions: in each AWS account and region that
-      contains protected resources; within the central backup AWS account, in
-      each of the same regions as protected resources and their original
-      backups; and within the central backup AWS account, in the secondary
-      region. You must create vaults; AWS Backup "Default" vaults are not
-      suitable for cross-account use.
+    Description: (Not ARN!) All required vaults must have the same name.
+    Default: "AWSBackupEvents-Sample"
 
   CopyRoleName:
     Type: String
     Description: >-
-      Name (not complete ARN) of the IAM role that the AWS Backup service will
-      assume when copying backups. Roles are account-wide, not regional. This
-      tool requires a role of the same name in each AWS account that contains
-      protected resources and their original backups, as well as the central
-      backup AWS account. Within the central backup account, in regions that
-      contain protected resources and their original backups, you must also
-      update vault policies to allow this role to "backup:CopyIntoBackupVault"
-      .
-      Before using "service-role/AWSBackupDefaultServiceRole" , see
+      (Not ARN!) The AWS Backup service will assume this role when copying
+      backups. A role of the same name is required in each account that
+      contains resources to back up, and also in the backup account. (Roles
+      are acount-wide, not regional.)
+      For possible one-time setup steps before using
+      "service-role/AWSBackupDefaultServiceRole", see
       https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles
     Default: "service-role/AWSBackupDefaultServiceRole"
+
+  OnlyResourceAccountId:
+    Type: String
+    Description: >-
+      The only account that contains resources to back up. Leave blank if your
+      resources are spread across multiple accounts, in which case less
+      specific (organization-wide) permissions will be used.
+
+  LogsRetainDays:
+    Type: Number
+    Description: >-
+      See retentionInDays in
+      http://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutRetentionPolicy.html
+    Default: 7
+
+  LogLevel:
+    Type: String
+    Description: >-
+      See https://docs.python.org/3/library/logging.html#levels
+    Default: ERROR
+    AllowedValues:
+      - CRITICAL
+      - ERROR
+      - WARNING
+      - INFO
+      - DEBUG
+      - NOTSET
+
+  CloudWatchLogsKmsKey:
+    Type: String
+    Description: >-
+      If this is blank, function logs receive CloudWatch default non-KMS
+      encryption.
+      To use a customer-managed, multi-region KMS encryption key instead,
+      specify "ACCOUNT:key/KEY_ID", where KEY_ID begins with "mrk-". The
+      primary, or a replica key, must exist in regions containing resources to
+      back up. Key policy updates are necessary. See
+      https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html#cmk-permissions
+    Default: ""
 
   LambdaFnReservedConcurrentExecutions:
     Type: Number
@@ -114,140 +161,84 @@ Parameters:
   CopyLambdaFnMemoryMB:
     Type: Number
     Description: >-
-      How many megabytes of memory to allocate to the "Copy" AWS Lambda
-      function. Increase this only in case of out-of-memory errors. See
+      Increase this only in case of out-of-memory errors. See
       https://docs.aws.amazon.com/lambda/latest/operatorguide/computing-power.html
     Default: 128
 
   CopyLambdaFnTimeoutSecs:
     Type: Number
     Description: >-
-      How many seconds before execution of the "Copy" AWS Lambda function
-      is canceled. Increase this only in case of time-out errors. See
+      Increase this only in case of time-out errors. See
       https://aws.amazon.com/about-aws/whats-new/2018/10/aws-lambda-supports-functions-that-can-run-up-to-15-minutes/
     Default: 30
 
   UniqueNamePrefix:
     Type: String
     Description: >-
-      Function name prefix. Change only if you need to create multiple stacks
-      from the same template, in the same AWS accounts and regions, for
-      example, during a blue/green deployment.
+      Change only if you need to create multiple stacks from the same
+      template, in the same AWS accounts and regions, for example, during a
+      blue/green deployment.
     Default: "AWSBackupEvents"
 
   UpdateLifecycleLambdaFnMemoryMB:
     Type: Number
     Description: >-
-      How many megabytes of memory to allocate to the "Update Lifecycle" AWS
-      Lambda function. Increase this only in case of out-of-memory errors.
+      Increase this only in case of out-of-memory errors.
     Default: 128
 
   UpdateLifecycleLambdaFnTimeoutSecs:
     Type: Number
     Description: >-
-      How many seconds before execution of the "Update Lifecycle" AWS Lambda
-      function is canceled. Increase this only in case of time-out errors.
+      Increase this only in case of time-out errors.
     Default: 60
-
-  LogsRetainDays:
-    Type: Number
-    Description: >-
-      How many days to keep CloudWatch logs from the AWS Lambda functions. See
-      retentionInDays in
-      http://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutRetentionPolicy.html
-    Default: 7
-
-  LogLevel:
-    Type: String
-    Description: >-
-      Threshold for logging the activities of the AWS Lambda functions. See
-      https://docs.python.org/3/library/logging.html#levels
-    Default: ERROR
-    AllowedValues:
-      - CRITICAL
-      - ERROR
-      - WARNING
-      - INFO
-      - DEBUG
-      - NOTSET
-
-  CloudWatchLogsKmsKey:
-    Type: String
-    Description: >-
-      If this is blank, AWS Lambda function logs receive CloudWatch Logs
-      default non-KMS encryption. To use a customer-managed, multi-region KMS
-      encryption key instead, specify "ACCOUNT:key/KEY_ID", where KEY_ID
-      begins with "mrk-". The primary, or a replica key, must exist in the
-      regions where backups originate. For the necessary key policy updates,
-      see
-      https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html#cmk-permissions
-    Default: ""
-
-  SqsKmsKey:
-    Type: String
-    Description: >-
-      If this is blank, queue messages will not be encrypted. To use the
-      AWS-managed key (which does not support key policy restrictions, or
-      cross-region or cross-account usage), specify "alias/aws/sqs". To use a
-      customer-managed, multi-region KMS key, specify "ACCOUNT:key/KEY_ID",
-      where where KEY_ID begins with "mrk-". The primary, or a replica key,
-      must exist in the regions where backups originate; key policy updates
-      are generally necessary.
-    Default: ""
 
 Metadata:
 
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      - Label:
-          default: For Reference
+
+      - Label: { default: For Reference }
         Parameters:
           - PlaceholderSuggestedStackName
           - PlaceholderHelp
-      - Label:
-          default: Essential
+
+      - Label: { default: Essential }
         Parameters:
           - Enable
           - OrgId
-          - OnlyResourceAccountId
-          - CentralAccountId
-          - CentralSecondaryRegion
-          - VaultName
-          - CopyRoleName
+          - BackupAccountId
+          - BackupRegion
+          - BackupRegionAlternate
           - NewDeleteAfterDays
-      - Label:
-          default: Advanced...
+
+      - Label: { default: Advanced... }
         Parameters:
           - PlaceholderAdvancedParameters
-      - Label:
-          default: >-
-            Both AWS Lambda functions...
+
+      - Label: { default: Vaults }
         Parameters:
-          - LambdaFnReservedConcurrentExecutions
-      - Label:
-          default: >-
-            AWS Lambda function to start copying a backup
-        Parameters:
-          - CopyLambdaFnMemoryMB
-          - CopyLambdaFnTimeoutSecs
-          - UniqueNamePrefix
-      - Label:
-          default: >-
-            AWS Lambda function to schedule an original backup for deletion
-        Parameters:
-          - UpdateLifecycleLambdaFnMemoryMB
-          - UpdateLifecycleLambdaFnTimeoutSecs
-      - Label:
-          default: Logs
+          - CreateSampleVault
+          - VaultName
+          - CopyRoleName
+          - OnlyResourceAccountId
+
+      - Label: { default: Both AWS Lambda functions... }
         Parameters:
           - LogsRetainDays
           - LogLevel
           - CloudWatchLogsKmsKey
-      - Label:
-          default: >-
-            "Dead letter" SQS queue for event errors
+          - LambdaFnReservedConcurrentExecutions
+
+      - Label: { default: Function to start copying a backup }
         Parameters:
-          - SqsKmsKey
+          - CopyLambdaFnMemoryMB
+          - CopyLambdaFnTimeoutSecs
+          - UniqueNamePrefix
+
+      - Label: { default: Function to schedule a backup for deletion }
+        Parameters:
+          - UpdateLifecycleLambdaFnMemoryMB
+          - UpdateLifecycleLambdaFnTimeoutSecs
 
     ParameterLabels:
 
@@ -260,24 +251,35 @@ Metadata:
         default: Enabled?
       OrgId:
         default: AWS organization ID
-      OnlyResourceAccountId:
-        default: Only AWS account with protected resources
-      CentralAccountId:
-        default: Central backup AWS account
-      CentralSecondaryRegion:
-        default: Secondary region
-      VaultName:
-        default: Vault name
-      CopyRoleName:
-        default: IAM role name for copying backups
+      BackupAccountId:
+        default: Backup AWS account
+      BackupRegion:
+        default: Backup region
+      BackupRegionAlternate:
+        default: Alternate for backup region
       NewDeleteAfterDays:
-        default: Days (from creation) to keep an original backup
+        default: Days (from creation) to keep original backups
 
       PlaceholderAdvancedParameters:
         default: Do not change the parameters below, unless necessary!
 
+      CreateSampleVault:
+        default: Create sample vaults?
+      VaultName:
+        default: Vault name
+      CopyRoleName:
+        default: IAM role name for copying backups
+      OnlyResourceAccountId:
+        default: Only AWS account with resources to back up
+
       LambdaFnReservedConcurrentExecutions:
         default: Number of parallel operations
+      LogsRetainDays:
+        default: Days before deleting logs
+      LogLevel:
+        default: Level of detail in logs
+      CloudWatchLogsKmsKey:
+        default: KMS encryption key for logs
 
       CopyLambdaFnMemoryMB:
         default: Megabytes of memory
@@ -291,54 +293,32 @@ Metadata:
       UpdateLifecycleLambdaFnTimeoutSecs:
         default: Seconds before timeout
 
-      LogsRetainDays:
-        default: Days before deleting
-      LogLevel:
-        default: Message level
-      CloudWatchLogsKmsKey:
-        default: KMS encryption key
-
-      SqsKmsKey:
-        default: KMS encryption key
-
 Conditions:
 
   EnableTrue: !Equals [ !Ref Enable, "true" ]
 
+  InBackupRegion: !Equals [ !Ref AWS::Region, !Ref BackupRegion ]
+
+  InBackupAccount: !Equals [ !Ref AWS::AccountId, !Ref BackupAccountId ]
+  NotInBackupAccount: !Not [ !Condition InBackupAccount ]
+
   OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
 
-  InCentralAccount: !Equals [ !Ref CentralAccountId, !Ref AWS::AccountId ]
-  NotInCentralAccount: !Not [ !Condition InCentralAccount ]
+  CreateSampleVaultTrue: !Equals [ !Ref CreateSampleVault, "true" ]
 
-  InSecondaryRegion: !Equals [ !Ref CentralSecondaryRegion, !Ref AWS::Region ]
-  NotInSecondaryRegion: !Not [ !Condition InSecondaryRegion ]
-
-  InCentralAccountSecondaryRegion: !And [ !Condition InCentralAccount, !Condition InSecondaryRegion]
-  NotInCentralAccountSecondaryRegion: !Not [ !Condition InCentralAccountSecondaryRegion ]
-
-  InCentralAccountNotInSecondaryRegion: !And [ !Condition InCentralAccount, !Condition NotInSecondaryRegion]
-
-  NotInCentralAccountNotInSecondaryRegion: !And [ !Condition NotInCentralAccount, !Condition NotInSecondaryRegion ]
-
-  CloudWatchLogsKmsKeyBlank: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
-
-  SqsKmsKeyBlank: !Equals [ !Ref SqsKmsKey, "" ]
-  SqsKmsKeyCustom:
-    Fn::And:
-      - !Not [ !Condition SqsKmsKeyBlank ]
-      - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
+  CloudWatchLogsKmsKeyNo: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
 
 Resources:
 
   # Administrator: Restrict iam:PassRole to prevent use of these roles for
   # arbitrary AWS Lambda functions.
 
-  InvokeCopyLambdaFnInCentralAcctRole:
+  InvokeCopyLambdaFnInBackupAcctRole:
     Type: AWS::IAM::Role
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       # Cross-account:
-      RoleName: !Sub "${UniqueNamePrefix}-InvokeCopyLambdaFnInCentralAcctRole-${AWS::Region}"
+      RoleName: !Sub "${UniqueNamePrefix}-InvokeCopyLambdaFnInBackupAcctRole-${AWS::Region}"
 
       Description: !Sub "For ${AWS::Region} region"
       AssumeRolePolicyDocument:
@@ -354,20 +334,20 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${CentralAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
                 Condition:
                   StringEquals:
                     "aws:ResourceOrgID": !Ref OrgId
 
   EventTargetErrorQueuePol:
     Type: AWS::SQS::QueuePolicy
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       Queues: [ !Ref EventTargetErrorQueue ]
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: RequireSsl
+          - Sid: RequireTls
             Effect: Deny
             Principal: "*"
             Action: sqs:*
@@ -384,18 +364,17 @@ Resources:
             Action: sqs:SendMessage
             Resource: "*"
             Condition:
-              ArnEquals: { aws:SourceArn: !GetAtt Copy1ToCentralAcctCompletedCopyLambdaFnEvRule.Arn }
+              ArnEquals: { aws:SourceArn: !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn }
           - Sid: ExclusiveSource
             Effect: Deny
             Principal: "*"
             Action: sqs:SendMessage
             Resource: "*"
             Condition:
-              ArnNotEquals: { aws:SourceArn: !GetAtt Copy1ToCentralAcctCompletedCopyLambdaFnEvRule.Arn }
+              ArnNotEquals: { aws:SourceArn: !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn }
 
   CopyLambdaFnRole:
     Type: AWS::IAM::Role
-    Condition: NotInCentralAccountSecondaryRegion
     Properties:
       Description: !Sub "For ${AWS::Region} region"
       AssumeRolePolicyDocument:
@@ -438,17 +417,17 @@ Resources:
                     "aws:ResourceAccount": !Ref AWS::AccountId
                     # This ia a global ("aws:"), not AWS Backup ("backup:")
                     # condition key. "Resource" refers to the original backup
-                    # or the first copy, not to the "protected resource" (that
+                    # or the 1st copy, not to the "protected resource" (that
                     # is, not to the resource that was backed up).
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
                 Condition:
-                  StringLike: { "iam:PassedToService": "backup.amazonaws.com" }
+                  StringLike: { "iam:PassedToService": backup.amazonaws.com }
 
   UpdateLifecycleLambdaFnRole:
     Type: AWS::IAM::Role
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       Description: !Sub "For ${AWS::Region} region"
       AssumeRolePolicyDocument:
@@ -493,7 +472,6 @@ Resources:
                     # condition key. "Resource" refers to the original backup,
                     # not to the "protected resource" (that is, not to the
                     # resource that was backed up).
-
         - PolicyName: BackupWrite
           PolicyDocument:
             Version: "2012-10-17"
@@ -509,57 +487,79 @@ Resources:
                     # not to the "protected resource" (that is, not to the
                     # resource that was backed up).
 
+  SampleVault:
+    Type: AWS::Backup::BackupVault
+    Condition: CreateSampleVaultTrue
+    Properties:
+      BackupVaultName: !Ref VaultName
+      BackupVaultTags:
+        Note:
+          Fn::If:
+            - InBackupAccount
+            - >-
+                Only for copies of copies of EFS backups.
+                Prior copy: same account and other region and encrypted with
+                the AWS-managed default aws/backup key for that region.
+                This copy: encrypted with the aws/backup key for this region.
+            - >-
+                Only for copies of EFS backups.
+                Original backup: other account and same region and
+                unencrypted.
+                This copy: encrypted with the AWS-managed default aws/backup
+                key for this account and this region.
+      AccessPolicy:
+        Fn::If:
+          - InBackupAccount
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Principal: "*"
+                Condition:
+                  StringEquals:
+                    "aws:PrincipalOrgId": !Ref OrgId
+                  ArnLike:
+                    "aws:PrincipalArn": !Sub "arn:aws:iam::*:role/${CopyRoleName}"
+                Action: backup:CopyIntoBackupVault
+                Resource: "*"
+          - !Ref AWS::NoValue
+
   EventTargetErrorQueue:
     Type: AWS::SQS::Queue
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       DelaySeconds: 0
-      KmsMasterKeyId:
-        Fn::If:
-          - SqsKmsKeyBlank
-          - !Ref AWS::NoValue
-          - Fn::If:
-              - SqsKmsKeyCustom
-              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${SqsKmsKey}"
-              - !Ref SqsKmsKey
-      KmsDataKeyReusePeriodSeconds:
-        Fn::If:
-          - SqsKmsKeyBlank
-          - !Ref AWS::NoValue
-          - 86400  # seconds (24 hours)
       MessageRetentionPeriod: 604800  # seconds (7 days)
       ReceiveMessageWaitTimeSeconds: 20  # long polling (lowest cost)
       VisibilityTimeout: 60  # seconds
 
   CopyLambdaFnLogGrp:
     Type: AWS::Logs::LogGroup
-    Condition: NotInCentralAccountSecondaryRegion
     Properties:
       RetentionInDays: !Ref LogsRetainDays
       KmsKeyId:
         Fn::If:
-          - CloudWatchLogsKmsKeyBlank
+          - CloudWatchLogsKmsKeyNo
           - !Ref AWS::NoValue
           - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
 
   UpdateLifecycleLambdaFnLogGrp:
     Type: AWS::Logs::LogGroup
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       RetentionInDays: !Ref LogsRetainDays
       KmsKeyId:
         Fn::If:
-          - CloudWatchLogsKmsKeyBlank
+          - CloudWatchLogsKmsKeyNo
           - !Ref AWS::NoValue
           - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
 
   BackupCompletedCopyLambdaFnEvRule:
     Type: AWS::Events::Rule
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       Description: >-
-        After backup has been created, store first (same-region) copy in
-        central backup AWS account
+        After backup has been created, store 1st (same-region) copy in
+        backup account
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Backup Job State Change ]
@@ -573,16 +573,16 @@ Resources:
           Arn: !GetAtt CopyLambdaFn.Arn
       State: !If [ EnableTrue, ENABLED, DISABLED ]
 
-  Copy1ToCentralAcctCompletedCopyLambdaFnEvRule:
+  Copy1ToBackupAcctCompletedCopyLambdaFnEvRule:
     Type: AWS::Events::Rule
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       # Cross-account:
-      Name: !Sub "${UniqueNamePrefix}-Copy1ToCentralAcctCompletedCopyLambdaFnEvRule"
+      Name: !Sub "${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
 
       Description: >-
-        After first (same-region) copy of backup has been stored in central
-        backup AWS account, store second (secondary-region) copy
+        After 1st (same-region) copy of backup has been stored in backup
+        account, store another copy in a 2nd region
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Copy Job State Change ]
@@ -591,12 +591,12 @@ Resources:
           sourceBackupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
           destinationBackupVaultArn:
-            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
         version: [ "0" ]
       Targets:
         - Id: !Sub "${UniqueNamePrefix}-CopyLambdaFn"
-          RoleArn: !GetAtt InvokeCopyLambdaFnInCentralAcctRole.Arn
-          Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${CentralAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
+          RoleArn: !GetAtt InvokeCopyLambdaFnInBackupAcctRole.Arn
+          Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
           DeadLetterConfig:
             Arn: !GetAtt EventTargetErrorQueue.Arn
       State: !If [ EnableTrue, ENABLED, DISABLED ]
@@ -604,38 +604,44 @@ Resources:
   # Administrator: Block other invocations
   BackupCompletedCopyLambdaFnEvRulePerm:
     Type: AWS::Lambda::Permission
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       SourceArn: !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
       Principal: events.amazonaws.com
       Action: lambda:InvokeFunction
       FunctionName: !Ref CopyLambdaFn
 
-  Copy1ToCentralAcctCompletedCopyLambdaFnEvRulePerm:
+  Copy1ToBackupAcctCompletedCopyLambdaFnEvRulePerm:
     Type: AWS::Lambda::Permission
-    Condition: InCentralAccountNotInSecondaryRegion
+    Condition: InBackupAccount
     Properties:
+      # AWS Lambda does not allow direct editing of a Lambda function's
+      # resource access policy. The available PutPermission API does not
+      # accept the * wildcard in the AccountId position of ARNs. Therefore,
+      # unless we're expecting backups from only one account, we must allow
+      # any Principal in the organization, against any SouceArn .
+      # Administrator: Consider restricting by service control policy (SCP).
       SourceArn:
         Fn::If:
           - OnlyResourceAccountIdBlank
           - !Ref AWS::NoValue
-          - !Sub "arn:aws:events:${AWS::Region}:${OnlyResourceAccountId}:rule/${UniqueNamePrefix}-Copy1ToCentralAcctCompletedCopyLambdaFnEvRule"
+          - !Sub "arn:aws:events:${AWS::Region}:${OnlyResourceAccountId}:rule/${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
       PrincipalOrgID: !Ref OrgId
       Principal:
         Fn::If:
           - OnlyResourceAccountIdBlank
           - "*"
-          - !Sub "arn:aws:iam::${OnlyResourceAccountId}:role/${UniqueNamePrefix}-InvokeCopyLambdaFnInCentralAcctRole-${AWS::Region}"
+          - !Sub "arn:aws:iam::${OnlyResourceAccountId}:role/${UniqueNamePrefix}-InvokeCopyLambdaFnInBackupAcctRole-${AWS::Region}"
       Action: lambda:InvokeFunction
       FunctionName: !Ref CopyLambdaFn
 
-  CopyCompletedEvRuleUpdateLifecycleLambdaFn:
+  Copy1CompletedUpdateLifecycleLambdaFnEvRule:
     Type: AWS::Events::Rule
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       Description: >-
-        After first (same-region) copy has been stored in central backup AWS
-        account, schedule deletion of original backup
+        After 1st (same-region) copy has been stored in backup account,
+        schedule deletion of original backup
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Copy Job State Change ]
@@ -644,7 +650,7 @@ Resources:
           sourceBackupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
           destinationBackupVaultArn:
-            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
         version: [ "0" ]
       Targets:
         - Id: !Ref UpdateLifecycleLambdaFn
@@ -654,20 +660,19 @@ Resources:
   # Administrator: Block other invocations
   UpdateLifecycleLambdaFnPerm:
     Type: AWS::Lambda::Permission
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
-      SourceArn: !GetAtt CopyCompletedEvRuleUpdateLifecycleLambdaFn.Arn
+      SourceArn: !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
       Principal: events.amazonaws.com
       Action: lambda:InvokeFunction
       FunctionName: !Ref UpdateLifecycleLambdaFn
 
   CopyLambdaFn:
-    Condition: NotInCentralAccountSecondaryRegion
     Type: AWS::Lambda::Function
     Properties:
       FunctionName:
         Fn::If:
-          - InCentralAccount
+          - InBackupAccount
           - !Sub "${UniqueNamePrefix}-CopyLambdaFn"  # Cross-account
           - !Ref AWS::NoValue  # Same-account, prefer CloudFormation naming
       Role: !GetAtt CopyLambdaFnRole.Arn
@@ -692,14 +697,17 @@ Resources:
           BACKUP_VAULT_NAME: !Ref VaultName
           DESTINATION_BACKUP_VAULT_ARN:
             Fn::If:
-              - InCentralAccount
-              - !Sub "arn:${AWS::Partition}:backup:${CentralSecondaryRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
-              - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${CentralAccountId}:backup-vault:${VaultName}"
+              - InBackupAccount
+              - Fn::If:
+                  - InBackupRegion
+                  - !Sub "arn:${AWS::Partition}:backup:${BackupRegionAlternate}:${AWS::AccountId}:backup-vault:${VaultName}"
+                  - !Sub "arn:${AWS::Partition}:backup:${BackupRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
+              - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
       Handler: index.lambda_handler_copy
       Code:
         ZipFile: |
           #!/usr/bin/env python3
-          """Back up RDS/Aurora databases, etc. to a different AWS account and region
+          """Cross-account, cross-region backups with AWS Backup and EventBridge
 
           github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
           """
@@ -1007,7 +1015,7 @@ Resources:
 
   UpdateLifecycleLambdaFn:
     Type: AWS::Lambda::Function
-    Condition: NotInCentralAccountNotInSecondaryRegion
+    Condition: NotInBackupAccount
     Properties:
       Role: !GetAtt UpdateLifecycleLambdaFnRole.Arn
       ReservedConcurrentExecutions: !Ref LambdaFnReservedConcurrentExecutions
@@ -1034,7 +1042,7 @@ Resources:
       Code:
         ZipFile: |
           #!/usr/bin/env python3
-          """Back up RDS/Aurora databases, etc. to a different AWS account and region
+          """Cross-account, cross-region backups with AWS Backup and EventBridge
 
           github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
           """

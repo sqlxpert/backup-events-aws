@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Back up RDS/Aurora databases, etc. to a different AWS account and region
+"""Cross-account, cross-region backups with AWS Backup and EventBridge
 
 github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
 """
