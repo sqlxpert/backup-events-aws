@@ -134,6 +134,10 @@ Jump to:
 
 ## Accounts and Regions
 
+The region codes are examples only; choose the regions you use, noting some
+differences in AWS Backup
+[Feature availability by AWS Region](https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-feature-availability.html#features-by-region).
+
 ### Minimum Account Layout
 
 |Region&rarr;<br>Account<br>&darr;||Main|Backup|
