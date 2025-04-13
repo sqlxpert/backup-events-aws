@@ -101,7 +101,7 @@ Parameters:
   VaultCustomKmsKey:
     Type: String
     Description: >-
-      Generally, leave this blank.
+      Generally, leave blank.
       If you are using the sample vaults but bringing your own key (BYOK),
       specify "ACCOUNT:key/KEY_ID", where KEY_ID begins with "mrk-". This must
       be a suitably-configured customer-managed multi-region KMS key. See
@@ -168,15 +168,6 @@ Parameters:
       back up. Key policy updates are necessary. See
       https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html#cmk-permissions
     Default: ""
-
-  LambdaFnReservedConcurrentExecutions:
-    Type: Number
-    Description: >-
-      How many backup copy or backup lifecycle update requests can definitely
-      be started at once. See
-      https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html#configuration-concurrency-reserved
-    MinValue: 0
-    Default: 2
 
   CopyLambdaFnMemoryMB:
     Type: Number
@@ -249,7 +240,6 @@ Metadata:
           - LogsRetainDays
           - LogLevel
           - CloudWatchLogsKmsKey
-          - LambdaFnReservedConcurrentExecutions
 
       - Label: { default: Function to start copying a backup }
         Parameters:
@@ -298,8 +288,6 @@ Metadata:
       OnlyResourceAccountId:
         default: Only AWS account with resources to back up
 
-      LambdaFnReservedConcurrentExecutions:
-        default: Number of parallel operations
       LogsRetainDays:
         default: Days before deleting logs
       LogLevel:
@@ -340,8 +328,8 @@ Conditions:
 
 Resources:
 
-  # Administrator: Restrict iam:PassRole to prevent use of these roles for
-  # arbitrary AWS Lambda functions.
+  # Administrator: Restrict iam:PassRole to prevent arbitrary use of these
+  # roles
 
   InvokeCopyLambdaFnInBackupAcctRole:
     Type: AWS::IAM::Role
@@ -357,6 +345,14 @@ Resources:
           - Effect: Allow
             Principal: { Service: events.amazonaws.com }
             Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:ResourceOrgID": !Ref OrgId
+              ArnLike:
+                "aws:SourceArn":
+                  !Sub "arn:aws:events:${AWS::Region}:*:rule/${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
+                  # Confused deputy prevention; fixed rule name avoids
+                  # circular dependency
       Policies:
         - PolicyName: LambdaInvoke
           PolicyDocument:
@@ -394,14 +390,22 @@ Resources:
             Action: sqs:SendMessage
             Resource: "*"
             Condition:
-              ArnEquals: { aws:SourceArn: !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn }
+              ArnEquals:
+                "aws:SourceArn":
+                  - !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
+                  - !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
+                  - !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn
           - Sid: ExclusiveSource
             Effect: Deny
             Principal: "*"
             Action: sqs:SendMessage
             Resource: "*"
             Condition:
-              ArnNotEquals: { aws:SourceArn: !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn }
+              ArnNotEquals:
+                "aws:SourceArn":
+                  - !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
+                  - !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
+                  - !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn
 
   CopyLambdaFnRole:
     Type: AWS::IAM::Role
@@ -606,13 +610,15 @@ Resources:
       Targets:
         - Id: !Ref CopyLambdaFn
           Arn: !GetAtt CopyLambdaFn.Arn
+          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
       State: !If [ EnableTrue, ENABLED, DISABLED ]
 
   Copy1ToBackupAcctCompletedCopyLambdaFnEvRule:
     Type: AWS::Events::Rule
     Condition: NotInBackupAccount
     Properties:
-      # Cross-account:
+      # Cross-account; fixed name also avoids circular dependency for confused
+      # deputy prevention
       Name: !Sub "${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
 
       Description: >-
@@ -632,8 +638,7 @@ Resources:
         - Id: !Sub "${UniqueNamePrefix}-CopyLambdaFn"
           RoleArn: !GetAtt InvokeCopyLambdaFnInBackupAcctRole.Arn
           Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
-          DeadLetterConfig:
-            Arn: !GetAtt EventTargetErrorQueue.Arn
+          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
       State: !If [ EnableTrue, ENABLED, DISABLED ]
 
   # Administrator: Block other invocations
@@ -690,6 +695,7 @@ Resources:
       Targets:
         - Id: !Ref UpdateLifecycleLambdaFn
           Arn: !GetAtt UpdateLifecycleLambdaFn.Arn
+          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
       State: !If [ EnableTrue, ENABLED, DISABLED ]
 
   # Administrator: Block other invocations
@@ -711,7 +717,6 @@ Resources:
           - !Sub "${UniqueNamePrefix}-CopyLambdaFn"  # Cross-account
           - !Ref AWS::NoValue  # Same-account, prefer CloudFormation naming
       Role: !GetAtt CopyLambdaFnRole.Arn
-      ReservedConcurrentExecutions: !Ref LambdaFnReservedConcurrentExecutions
       Timeout: !Ref CopyLambdaFnTimeoutSecs
       MemorySize: !Ref CopyLambdaFnMemoryMB
       LoggingConfig:
@@ -1054,7 +1059,6 @@ Resources:
     Condition: NotInBackupAccount
     Properties:
       Role: !GetAtt UpdateLifecycleLambdaFnRole.Arn
-      ReservedConcurrentExecutions: !Ref LambdaFnReservedConcurrentExecutions
       Timeout: !Ref UpdateLifecycleLambdaFnTimeoutSecs
       MemorySize: !Ref UpdateLifecycleLambdaFnMemoryMB
       LoggingConfig:
