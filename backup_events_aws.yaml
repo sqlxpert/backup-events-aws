@@ -36,24 +36,32 @@ Parameters:
     Type: String
     Description: >-
       Example: "o-abcde12345"
+    AllowedPattern: '.+'
+    ConstraintDescription: Must not be blank
 
   BackupAccountId:
     Type: String
     Description: >-
       An account different from the one(s) containing resources to back up.
       Backups will first be copied to this account, with no change in region.
+    AllowedPattern: '.+'
+    ConstraintDescription: Must not be blank
 
   BackupRegion:
     Type: String
     Description: >-
       Example: "us-east-1". Within the backup account, backup copies that
       originated in other regions will be copied to this second region.
+    AllowedPattern: '.+'
+    ConstraintDescription: Must not be blank
 
   BackupRegionAlternate:
     Type: String
     Description: >-
       Within the backup account, backup copies that originated in the backup
       region will be copied to this alternate second region.
+    AllowedPattern: '.+'
+    ConstraintDescription: Must not be blank
 
   NewDeleteAfterDays:
     Type: Number
@@ -204,7 +212,6 @@ Parameters:
     Default: 60
 
 Metadata:
-
   AWS::CloudFormation::Interface:
     ParameterGroups:
 
@@ -307,6 +314,15 @@ Metadata:
       UpdateLifecycleLambdaFnTimeoutSecs:
         default: Seconds before timeout
 
+Rules:
+
+  BackupRegionNotEqualsAlternate:
+    Assertions:
+      - Assert:
+          !Not [ !Equals [ !Ref BackupRegion, !Ref BackupRegionAlternate ] ]
+        AssertDescription: >-
+          BackupRegion and BackupRegionAlternate must be different.
+
 Conditions:
 
   EnableTrue: !Equals [ !Ref Enable, "true" ]
@@ -320,7 +336,7 @@ Conditions:
 
   VaultCustomKmsKeyNo: !Equals [ !Ref VaultCustomKmsKey, "" ]
   InBackupAccountAndVaultCustomKmsKeyNo:
-    Fn::And: [ !Condition InBackupAccount, !Condition VaultCustomKmsKeyNo ]
+    !And [ !Condition InBackupAccount, !Condition VaultCustomKmsKeyNo ]
 
   OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
 

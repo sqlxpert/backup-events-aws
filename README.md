@@ -35,11 +35,19 @@ Jump to:
 
 ## Quick Start
 
- 1. Check the prerequisites:
+ 1. Check the prerequisites...
+
+    If you have successfully used AWS Backup to make backups from the AWS
+    Console, in 2 AWS accounts (your main account and your backup account),
+    and you have successfully copied backups from your main account to your
+    backup account, you have probably met the preqrequisites for the
+    quick-start.
+
+    <details>
+      <summary>For complex environments, or if you are new to AWS Backup...</summary>
 
     - AWS Organizations is configured.
-    - Every AWS account where you intend to install Backup Events (including
-      2 accounts for the quick-start: main and backup) is in your
+    - Every AWS account where you intend to install Backup Events is in your
       organization.
     - In the management account, under
       [AWS Organizations &rarr; Services &rarr; AWS Backup](https://console.aws.amazon.com/organizations/v2/home/services/AWS%20Backup),
@@ -47,8 +55,7 @@ Jump to:
      `o-` and appears at the lower left.
     - Under
       [AWS Organizations &rarr; Policies](https://console.aws.amazon.com/organizations/v2/home/policies),
-      "Service control policies" are enabled. (This solution does not create any
-      SCPs.)
+      "Service control policies" are enabled.
     - Under
       [AWS Backup &rarr; My account &rarr; Settings &rarr; Cross-account management](https://console.aws.amazon.com/backup/home#/settings),
       all options are enabled, including "Cross-account monitoring" and
@@ -61,6 +68,12 @@ Jump to:
       first time you make an on-demand backup in a given AWS account.
       Otherwise, see
       [Default service role for AWS Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles).
+    - Permissions are sufficient and service and resource control policies
+      (SCPs and RCPs), permissions boundaries, or session policies do not
+      interfere with the installation or operation of Backup Events. Check
+      with your AWS administrator!
+
+    </details>
 
  2. Log in to the AWS Console as an administrator, in the AWS account where
     you would like your backups to be stored.
