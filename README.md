@@ -8,7 +8,7 @@
     or follow
     [multi-account best practices](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/infrastructure-ou-and-accounts.html#backup-account)).
 
-  - Delete original backups after they've been copied -- _but_ wait to save
+  - Delete original backups after they have been copied -- but _wait_ to save
     money with
     [incremental backups](https://docs.aws.amazon.com/aws-backup/latest/devguide/creating-a-backup.html#incremental-backup-works).
 
@@ -24,7 +24,7 @@
 
   - Create 3 CloudFormation stacks from the same template for a minimum
     installation, or deploy across many accounts and regions by creating a
-    CloudFormation StackSet.
+    StackSet.
 
 Jump to:
 [Quick Start](#quick-start)
@@ -64,7 +64,7 @@ Jump to:
     you would like your backups to be stored.
 
  3. Switch to your main region, that is, the region where most of your
-    resources (in another account) are. Your main region doubles as the
+    resources (in another account) are. Your main region will double as the
     _alternate_ for your backup region.
 
  4. Create a
@@ -74,23 +74,29 @@ Jump to:
     [backup_events_aws.yaml](/backup_events_aws.yaml?raw=true)
     [right-click to save as...]. On the next page, set:
 
-     - Stack name _(Copy and paste this from "For Reference")_
+     - Stack name - _Copy and paste from "For Reference"_
      - AWS organization ID
-     - Backup AWS account _(From Step 2)_
-     - Backup region _(A different region that you do not use much)_
-     - Alternate for backup region _(From Step 3)_
+     - Backup AWS account - _From Step 2_
+     - Backup region = _Specify a different region that you do not use much_
+     - Alternate for backup region - _From Step 3_
+     - Days (from creation) to keep original backups - _If you change this,
+       consider
+       [incremental backups](https://docs.aws.amazon.com/aws-backup/latest/devguide/creating-a-backup.html#incremental-backup-works),
+       which save money if you keep the previous backup
+       [long enough](https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html)
+       for the next scheduled backup to complete._
   
  5. Stay in the same AWS account but switch to your backup region.
  
  6. Create a stack from the same template. Set **exactly the same parameter
-    values** from Step 4.
+    values** as in Step 4.
  
  7. Switch to your main AWS account.
 
- 8. Switch to your main region, from Step 3.
+ 8. Switch to your main region (from Step 3).
  
  9. Create a stack from the same template. Set **exactly the same parameter
-    values** from Step 4.
+    values** as in Step 4.
 
 10. Create an
     [EFS file system](https://console.aws.amazon.com/efs/home#/file-systems).
@@ -101,8 +107,8 @@ Jump to:
 
 11. When your EFS file system is ready, go to
     [AWS Backup &rarr; My account &rarr; Create on-demand backup](https://console.aws.amazon.com/backup/home#/dashboard).
-    Change the "Resource type" to EFS and select your file system. Change the
-    "Backup vault" to BackupEvents-Sample **(important)**.
+    Change the "Resource type" to EFS and select your new file system. Change
+    the "Backup vault" to BackupEvents-Sample **(important)**.
 
 12. Watch for completion of the backup job, and then creation and completion
     of a copy job. At that point, the original backup should show a "Retention
@@ -112,11 +118,11 @@ Jump to:
     the main region and the backup region.
 
 13. In case of trouble, focus on the main region and check, in both accounts
-    unless otherwise noted:
+    unless otherwise noted,
 
-    - The [BackupEvents CloudWatch log groups](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
+    - The [BackupEvents CloudWatch log group(s)](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
 
-    - The `BackupEvents-ErrorTarget`
+    - The `BackupEvents`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
       (not in the backup account)
 
@@ -130,23 +136,20 @@ Jump to:
 
 ### Minimum Account Layout
 
-|Region&rarr;<br>&darr;Account||Main|Backup|
+|Region&rarr;<br>Account<br>&darr;||Main|Backup|
 |:---|:---|:---:|:---:|
-||Region code&rarr;<br>&darr;Account ID|`us-east-1`|`us-west-2`|
+||Region code&rarr;<br>Account ID<br>&darr;|`us-east-1`|`us-west-2`|
 |Main|`000022224444`|All resources||
 |Backup|`999977775555`|All backups|All copies of backups|
 
-- The minimum layout involves 2 regions, 2 AWS accounts, and 3 CloudFormation
-  StackSet member instances (or 3 ordinary CloudFormation stacks, created from
-  the same template).
-  - There is nothing to install in the backup region of the only resource
-    account, if you don't keep any resources there.
+- There is nothing to install in the backup region of the only resource
+  account, if you do not keep any resources there.
 
 ### Typical Account Layout - Extra Region
 
-|Region&rarr;<br>&darr;Account||USA East Coast|USA West Coast|Backup|
+|Region&rarr;<br>Account<br>&darr;||USA East Coast|USA West Coast|Backup|
 |:---|:---|:---:|:---:|:---:|
-||Region code&rarr;<br>&darr;Account ID|`us-east-1`|`us-west-1`|`us-west-2`|
+||Region code&rarr;<br>Account ID<br>&darr;|`us-east-1`|`us-west-1`|`us-west-2`|
 |Web server|`000022224444`|Resources|Resources||
 |API layer|`111133335555`|Resources|Resources||
 |Database|`888866664444`|Resources|Resources||
@@ -171,13 +174,8 @@ Jump to:
    Select "Upload a template file", then select "Choose file" and upload a
    locally-saved copy of
    [backup_events_aws.yaml](/backup_events_aws.yaml?raw=true)
-   [right-click to save as...]. On the next page, copy and paste to set:
-
-   - StackSet name
-   - StackSet description
-   
-   For other essential parameters, see Step 4 of the
-   [quick-start](#quick-start).
+   [right-click to save as...]. For essential parameter values, see Step 4 of
+   the [quick-start](#quick-start).
 
 4. Deploy to your main/resource account(s) and your backup account, in your
    main/resource region(s) and your backup region.
@@ -188,8 +186,9 @@ Terraform users are often willing to wrap a CloudFormation stack in HashiCorp
 Configuration Language, because AWS supplies tools in the form of
 CloudFormation templates. See
 [aws_cloudformation_stack](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudformation_stack)
-. Paul favored CloudFormation for this project because all AWS users have
-access, and the setup effort is minimal.
+. Paul favors CloudFormation because all AWS users have access, the setup
+effort is minimal, and those with a support plan can get CloudFormation help
+from AWS.
 
 Wrapping a CloudFormation _StackSet_ in HCL is much easier than configuring
 and using Terraform to deploy and maintain identical resources in multiple AWS
@@ -244,10 +243,74 @@ software at your own risk. You are encouraged to evaluate the source code._
   [AWS Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
   can help.
 
-- Be aware of AWS charges including but not limited to: data transfer,
-  encryption and decryption, backup storage, and early deletion from cold
-  storage. AWS Backup relies on other AWS services, each with their own
-  charges.
+- Compare backup storage costs over time to assess the effectiveness of your
+  NewDeleteAfterDays setting (which is applied to original backups in your
+  resource account(s), after they have been copied to your backup account), of
+  incremental backups (if applicable), and of the lifecycles you choose when
+  creating backups (which apply to both copies in your backup account).
+
+- Be aware of other AWS charges including but not limited to: data transfer,
+  encryption/decryption, key management, and early deletion from cold storage.
+  AWS Backup relies on other AWS services, each with their own charges.
+
+## Related
+
+- ([Code](https://github.com/aws-samples/aws-blog-automate-amazon-rds-cross-account-backups))
+  [Automate cross-account backups of RDS and Aurora databases with AWS Backup](https://aws.amazon.com/blogs/database/automate-cross-account-backups-of-amazon-rds-and-amazon-aurora-databases-with-aws-backup/)<br>
+  Enrique Ramirez, AWS Database Blog, October 14, 2021
+
+- ([Code](https://github.com/aws-samples/eventbridge-cross-account-targets))
+  [Introducing cross-account targets for EventBridge Event Buses](https://aws.amazon.com/blogs/compute/introducing-cross-account-targets-for-amazon-eventbridge-event-buses/)<br>
+  Chris McPeek, AWS Compute Blog, January 21, 2025
+
+## Motivation
+
+<details>
+  <summary>What motivated this work? ...</summary>
+
+Paul discovered the AWS Database blog post and sample code through a
+colleague, who had used it to back up a fleet of RDS databases with default
+KMS encryption. Thank you, Eugene, for always surveying the landscape first!
+
+To back up a new Aurora database fleet, Paul wrote native Terraform and
+adopted the sample AWS Lambda function Python source code. Given the
+importance of the backups, Paul wrote least-privilege IAM policies for custom
+roles. He had already created customer-managed, multi-region, cross-account
+KMS keys for the new databases.
+
+Later, he added a function to rewrite AWS Backup lifecycle objects, so that
+backups could be deleted after they'd been copied. Paul does not remember what
+he put in that fuction, and he has moved on from the company, but he does
+remember wishing for a self-documenting solution.
+
+So, Paul decided to write a new solution from scratch, on his own behalf. The
+benefits?
+
+- One CloudFormation template replaces three. It can also seed a StackSet, for
+  deployment at scale.
+
+- Advanced users can provide a multi-region KMS key. For now, Paul is not
+  publishing his test key definitions and key policies. The risk that an LLM
+  will treat a general example as specific, and that the security of some
+  important system will be compromised, is too great. If you need help with
+  mult-region, cross-account KMS encryption keys, least-privilege IAM
+  policies, etc., contact Paul!
+
+- Backup job completed events are similar to copy job completed events. An
+  Object-oriented approach accommodates both, a superclass covering the many
+  similarities and a subclass, the few differences. The same primitives serve
+  to copy backups and reduce retention.
+
+- The function to reduce retention of backups that have been copied features a
+  simple design. Minimum retention periods under various rules are added to a
+  list. At the end, the highest minimum is applied.
+
+= Since January, 2025, EventBridge has been able to invoke Lambda functions in
+  different AWS accounts. This eliminates the need for a custom event bus.
+  Paul goes further than the AWS Compute blog post and sample code,
+  restricting permissions as much as possible.
+
+</details>
 
 ## Licenses
 
