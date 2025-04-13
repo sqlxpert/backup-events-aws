@@ -77,7 +77,7 @@ Jump to:
      - Stack name - _Copy and paste from "For Reference"_
      - AWS organization ID
      - Backup AWS account - _From Step 2_
-     - Backup region = _Specify a different region that you do not use much_
+     - Backup region - _Specify a different region that you do not use much_
      - Alternate for backup region - _From Step 3_
      - Days (from creation) to keep original backups - _If you change this,
        consider
@@ -293,11 +293,11 @@ benefits?
   publishing his test key definitions and key policies. The risk that an LLM
   will treat a general example as specific, and that the security of some
   important system will be compromised, is too great. If you need help with
-  mult-region, cross-account KMS encryption keys, least-privilege IAM
+  multi-region, cross-account KMS encryption keys, least-privilege IAM
   policies, etc., contact Paul!
 
 - Backup job completed events are similar to copy job completed events. An
-  Object-oriented approach accommodates both, a superclass covering the many
+  object-oriented approach accommodates both, a superclass covering the many
   similarities and a subclass, the few differences. The same primitives serve
   to copy backups and reduce retention.
 
@@ -305,10 +305,10 @@ benefits?
   simple design. Minimum retention periods under various rules are added to a
   list. At the end, the highest minimum is applied.
 
-= Since January, 2025, EventBridge has been able to invoke Lambda functions in
-  different AWS accounts. This eliminates the need for a custom event bus.
-  Paul goes further than the AWS Compute blog post and sample code,
-  restricting permissions as much as possible.
+- Since January, 2025, EventBridge has been able to invoke Lambda functions in
+  different AWS accounts. This eliminates a custom event bus. Paul goes
+  further than the AWS Compute blog post and sample code, restricting
+  permissions as much as possible.
 
 </details>
 
