@@ -35,6 +35,8 @@ Jump to:
 &bull;
 [Security](#security)
 
+---
+
 ![The main components of Backup Events are: an AWS Backup vault in every account and region; 3 event rules in resource accounts; backup copy and retention reduction AWS Lambda functions in resource accounts; and a copy function in the backup account]( backup-events-aws-components.png "Components of Backup Events")
 
 ## Quick Start
