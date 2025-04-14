@@ -20,13 +20,24 @@ Parameters:
     Type: String
     Default: "github.com/sqlxpert/backup-events-aws"
 
-  Enable:
+  EnableCopy:
     Type: String
     Description: >-
-      No catch-up feature! Backups completed while this is false will not be
-      copied to the backup account, even after the setting is toggled back to
-      true. Copies completed while this is false will not be copied to the
-      backup region, even after the setting is toggled back to true.
+      No catch-up feature! Backups completed while this is false will never be
+      copied to the backup account. Copies completed while this is false will
+      never be copied to the backup region.
+    Default: "true"
+    AllowedValues:
+      - "false"
+      - "true"
+
+  EnableUpdateLifecycle:
+    Type: String
+    Description: >-
+      No catch-up feature! Backups completed while this is false will never
+      have their lifecycles updated for early deletion. 3 copies (2 copies in
+      the backup account, plus the original backup) will be retained according
+      to the backup's initial lifecycle.
     Default: "true"
     AllowedValues:
       - "false"
@@ -236,7 +247,8 @@ Metadata:
 
       - Label: { default: Essential }
         Parameters:
-          - Enable
+          - EnableCopy
+          - EnableUpdateLifecycle
           - OrgId
           - BackupAccountId
           - BackupRegion
@@ -282,8 +294,10 @@ Metadata:
       PlaceholderHelp:
         default: For help, see
 
-      Enable:
-        default: Enabled?
+      EnableCopy:
+        default: Enable copying of backups
+      EnableUpdateLifecycle:
+        default: Enable backup retention reduction
       OrgId:
         default: AWS Organization ID
       BackupAccountId:
@@ -339,9 +353,20 @@ Rules:
         AssertDescription: >-
           BackupRegion and BackupRegionAlternate must be different.
 
+  EnableUpdateLifecycleRequiresEnableCopy:
+    Assertions:
+      - Assert:
+          Fn::Not:
+            - Fn::And:
+                - !Equals [ !Ref EnableUpdateLifecycle, "true" ]
+                - !Not [ !Equals [ !Ref EnableCopy, "true" ] ]
+        AssertDescription: >-
+          EnableUpdateLifecycle requires EnableCopy.
+
 Conditions:
 
-  EnableTrue: !Equals [ !Ref Enable, "true" ]
+  EnableCopyTrue: !Equals [ !Ref EnableCopy, "true" ]
+  EnableUpdateLifecycleTrue: !Equals [ !Ref EnableUpdateLifecycle, "true" ]
 
   InBackupRegion: !Equals [ !Ref AWS::Region, !Ref BackupRegion ]
 
@@ -349,10 +374,7 @@ Conditions:
   NotInBackupAccount: !Not [ !Condition InBackupAccount ]
 
   CreateSampleVaultTrue: !Equals [ !Ref CreateSampleVault, "true" ]
-
   VaultCustomKmsKeyNo: !Equals [ !Ref VaultCustomKmsKey, "" ]
-  InBackupAccountAndVaultCustomKmsKeyNo:
-    !And [ !Condition InBackupAccount, !Condition VaultCustomKmsKeyNo ]
 
   OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
 
@@ -579,24 +601,38 @@ Resources:
       BackupVaultTags:
         Note:
           Fn::If:
-            - InBackupAccountAndVaultCustomKmsKeyNo
-            - >-
-                Only for copies of copies of EFS backups.
-                Prior copy: same account and other region and encrypted with
-                the AWS-managed default aws/backup key for that region.
-                This copy: encrypted with the aws/backup key for this region.
-            - >-
-                Only for copies of EFS backups.
-                Original backup: other account and same region and
-                unencrypted.
-                This copy: encrypted with the AWS-managed default aws/backup
-                key for this account and this region.
+            - VaultCustomKmsKeyNo
+            - Fn::If:
+                - InBackupAccount
+                - Fn::If:
+                    - InBackupRegion
+                    - >-
+                        Only for copies of copies of EFS backups.
+                        Prior copy: same account and other region and
+                        encrypted with the AWS-managed default aws/backup key
+                        for that region.
+                        This copy: encrypted with the aws/backup key for this
+                        region.
+                    - >-
+                        Only for copies of EFS backups.
+                        Original backup: other account and same region and
+                        unencrypted.
+                        This copy: encrypted with the AWS-managed default
+                        aws/backup key for this account and this region.
+                - >-
+                    Only for backups of unencrypted EFS file systems.
+                    File system: same account and region and unencrypted.
+                    This backup: encrypted with the aws/backup key for this
+                    region.
+            - !Ref AWS::NoValue
       AccessPolicy:
-        Fn::If:
-          - InBackupAccount
-          - Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
+        Version: "2012-10-17"
+        Statement:
+
+          - Fn::If:
+              - InBackupAccount
+              - Sid: CopyIntoBackupVaultAllowServiceRole
+                Effect: Allow
                 Principal: "*"
                 Condition:
                   StringEquals:
@@ -605,7 +641,24 @@ Resources:
                     "aws:PrincipalArn": !Sub "arn:aws:iam::*:role/${CopyRoleName}"
                 Action: backup:CopyIntoBackupVault
                 Resource: "*"
-          - !Ref AWS::NoValue
+              - !Ref AWS::NoValue
+
+          - Sid: CopyFromBackupVaultExclusiveCopyTarget
+            Effect: Deny
+            Principal: "*"
+            Action: backup:CopyFromBackupVault
+            Resource: "*"
+            Condition:
+              "ForAllValues:ArnNotEquals":
+                "backup:CopyTargets":
+                  # See also VaultARN and VAULT_ARN
+                  - Fn::If:
+                      - InBackupAccount
+                      - Fn::If:
+                          - InBackupRegion
+                          - !Sub "arn:${AWS::Partition}:backup:${BackupRegionAlternate}:${AWS::AccountId}:backup-vault:${VaultName}"
+                          - !Sub "arn:${AWS::Partition}:backup:${BackupRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
+                      - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
 
   EventTargetErrorQueue:
     Type: AWS::SQS::Queue
@@ -670,7 +723,7 @@ Resources:
         - Id: !Ref CopyLambdaFn
           Arn: !GetAtt CopyLambdaFn.Arn
           DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
-      State: !If [ EnableTrue, ENABLED, DISABLED ]
+      State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
 
   Copy1ToBackupAcctCompletedCopyLambdaFnEvRule:
     Type: AWS::Events::Rule
@@ -698,7 +751,7 @@ Resources:
           RoleArn: !GetAtt InvokeCopyLambdaFnInBackupAcctRole.Arn
           Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
           DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
-      State: !If [ EnableTrue, ENABLED, DISABLED ]
+      State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
 
   # Administrator: Block other invocations
   BackupCompletedCopyLambdaFnEvRulePerm:
@@ -755,7 +808,7 @@ Resources:
         - Id: !Ref UpdateLifecycleLambdaFn
           Arn: !GetAtt UpdateLifecycleLambdaFn.Arn
           DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
-      State: !If [ EnableTrue, ENABLED, DISABLED ]
+      State: !If [ EnableUpdateLifecycleTrue, ENABLED, DISABLED ]
 
   # Administrator: Block other invocations
   UpdateLifecycleLambdaFnPerm:
@@ -795,6 +848,7 @@ Resources:
           COPY_ROLE_ARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
           BACKUP_VAULT_NAME: !Ref VaultName
           DESTINATION_BACKUP_VAULT_ARN:
+            # See also VaultARN and backup:CopyTargets
             Fn::If:
               - InBackupAccount
               - Fn::If:

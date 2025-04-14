@@ -268,12 +268,24 @@ software at your own risk. You are encouraged to evaluate the source code._
 
 - Least-privilege roles for the AWS Lambda functions
 
+  - The role for the function that reduces retention of original backups after
+    they have been copied can access backups in any vault in the same AWS
+    account and region. Tampering with the function's source code or
+    environment variables would allow switching vaults. The backup AWS
+    account acts as a security barrier; the function and its role are never
+    created there. (Issue: backup or `recoveryPoint`
+    [ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-resources-for-iam-policies),
+    do not include the vault name, and there is no
+    [condition key](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-policy-keys)
+    such as backup:VaultARN.)
+
 - Readable IAM policies, formatted as CloudFormation YAML rather than JSON,
   and broken down into discrete statements by service, resource or principal
 
-- Tolerance for slow operations and clock drift in a distributed system.
-  The function to schedule original backups for deletion adds a full-day
-  margin.
+- Tolerance for slow operations and clock drift in a distributed system
+
+  - The function that reduces retention of original backups after they have
+    been copied applies a full-day margin.
 
 - Option to encrypt logs and queued event errors at rest, using the AWS Key
   Management System (KMS)
@@ -362,10 +374,14 @@ remember wishing for a simpler, self-documenting function.
 So, Paul decided to write a new solution from scratch, on his own behalf. The
 benefits?
 
-- One CloudFormation template replaces three, so that advanced users can also
-  use it to create a StackSet for deployment at scale. Whether the current AWS
-  account and region match the backup account and backup region determines
-  which AWS resources are created, and what the source and target strings are.
+- One CloudFormation template replaces AWS's three templates. Advanced
+  users can use the template to create a StackSet for deployment at scale.
+  Whether the current AWS account and region match the backup account and
+  backup region determines which AWS resources are created, and what the
+  source and target strings are.
+
+- On-demand backups are supported. AWS's solution depends on a copy step
+  that can be included in backup plans but not in on-demand backup requests.
 
 - Advanced users can provide a multi-region KMS key. For now, Paul is not
   publishing his test key definitions and key policies. The risk that an LLM
