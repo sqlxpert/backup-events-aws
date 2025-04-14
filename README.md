@@ -37,11 +37,13 @@ Jump to:
 
  1. Check the prerequisites...
 
-    If you have successfully used AWS Backup to make backups from the AWS
-    Console, in 2 AWS accounts (your main account and your backup account),
-    and you have successfully copied backups from your main account to your
-    backup account, you have probably met the preqrequisites for the
-    quick-start.
+    If you have already used AWS Backup from the AWS Console, to make a backup
+    in one AWS account (your "main account") and copy the backup to another
+    account (your "backup account"), you are probably ready for the
+    quick-start. Find your `o-` Organization ID in the lower left corner of
+    the
+    [AWS Organizations](https://us-east-1.console.aws.amazon.com/organizations/v2/home/accounts)
+    console page.
 
     <details>
       <summary>For complex environments, or if you are new to AWS Backup...</summary>
@@ -51,8 +53,7 @@ Jump to:
       organization.
     - In the management account, under
       [AWS Organizations &rarr; Services &rarr; AWS Backup](https://console.aws.amazon.com/organizations/v2/home/services/AWS%20Backup),
-      "Trusted access" is enabled. Note your organization ID, which starts with
-     `o-` and appears at the lower left.
+      "Trusted access" is enabled.
     - Under
       [AWS Organizations &rarr; Policies](https://console.aws.amazon.com/organizations/v2/home/policies),
       "Service control policies" are enabled.
@@ -78,6 +79,9 @@ Jump to:
  2. Log in to the AWS Console as an administrator, in the AWS account where
     you would like your backups to be stored.
 
+    - You will need to paste you backup account number several times. Open the
+      menu at the top right corner of the AWS Console and copy the Account ID.
+
  3. Switch to your main region, that is, the region where most of your
     resources (housed in another account) are.
 
@@ -91,7 +95,7 @@ Jump to:
     [right-click to save as...]. On the next page, set:
 
     - Stack name - _Copy and paste from "For Reference"_
-    - AWS organization ID - _From quick-start Step 1_
+    - AWS Organization ID - _From quick-start Step 1_
     - Backup AWS account - _From quick-start Step 2_
     - Backup region - _Specify a different region that you do not use much_
     - Alternate for backup region - _From quick-start Step 3_
@@ -106,7 +110,9 @@ Jump to:
  6. Create a stack from the same template. Set **exactly the same parameter
     values** as in quick-start Step 4.
 
- 7. Switch to your main AWS account.
+ 7. Note your backup account number before leaving (you will need it to create
+    one more stack, but it will not be available to copy), then switch to your
+    main AWS account.
 
  8. Switch to your main region (from quick-start Step 3).
 
@@ -154,6 +160,10 @@ Jump to:
 
 14. Delete the EFS file system and all of its AWS Backup backups (or let the
     backups expire, at a small cost).
+
+    - You will not be able to fully delete a Backup Events CloudFormation
+      stack if backups remain in the stack's sample vault. This prevents the
+      proliferation of unmanaged vaults.
 
 ## Accounts and Regions
 
@@ -261,7 +271,10 @@ software at your own risk. You are encouraged to evaluate the source code._
   The function to schedule original backups for deletion adds a full-day
   margin.
 
-- Option to encrypt logs at rest, with the AWS Key Management System (KMS)
+- Option to encrypt logs and queued event errors at rest, using the AWS Key
+  Management System (KMS)
+
+- Least-privilege SQS queue policy
 
 - Option to use custom vaults (with custom KMS keys) and a custom role for
   AWS Backup
@@ -331,8 +344,8 @@ roles. He had already created customer-managed, multi-region, cross-account
 KMS keys for the new databases.
 
 Later, he added a function to rewrite AWS Backup lifecycle objects, so that
-backups could be deleted after they'd been copied. Paul does not remember what
-he put in that fuction, and he has moved on from the company, but he does
+backups could be deleted after they had been copied. Paul does not remember
+what he put in that fuction, and he has moved on from the company, but he does
 remember wishing for a simpler, self-documenting function.
 
 So, Paul decided to write a new solution from scratch, on his own behalf. The

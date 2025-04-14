@@ -177,6 +177,19 @@ Parameters:
       https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html#cmk-permissions
     Default: ""
 
+  SqsKmsKey:
+    Type: String
+    Description: >-
+      If this is blank, EventBridge events sent to the "dead letter" queue
+      receive SQS default non-KMS encryption.
+      To use the AWS-managed default KMS key, specify "alias/aws/sqs".
+      To use a customer-managed, multi-region KMS key, specify
+      "ACCOUNT:key/KEY_ID", where where KEY_ID begins with "mrk-". The
+      primary, or a replica key, must exist in regions containing resources to
+      back up. Key policy updates are necessary. See
+      https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-key-management.html#compatibility-with-aws-services
+    Default: ""
+
   CopyLambdaFnMemoryMB:
     Type: Number
     Description: >-
@@ -247,6 +260,7 @@ Metadata:
           - LogsRetainDays
           - LogLevel
           - CloudWatchLogsKmsKey
+          - SqsKmsKey
 
       - Label: { default: Function to start copying a backup }
         Parameters:
@@ -271,7 +285,7 @@ Metadata:
       Enable:
         default: Enabled?
       OrgId:
-        default: AWS organization ID
+        default: AWS Organization ID
       BackupAccountId:
         default: Backup AWS account
       BackupRegion:
@@ -301,6 +315,8 @@ Metadata:
         default: Level of detail in logs
       CloudWatchLogsKmsKey:
         default: KMS encryption key for logs
+      SqsKmsKey:
+        default: KMS encryption key for event errors
 
       CopyLambdaFnMemoryMB:
         default: Megabytes of memory
@@ -342,6 +358,12 @@ Conditions:
 
   CloudWatchLogsKmsKeyNo: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
 
+  SqsKmsKeyNo: !Equals [ !Ref SqsKmsKey, "" ]
+  SqsKmsKeyCustom:
+    Fn::And:
+      - !Not [ !Condition SqsKmsKeyNo ]
+      - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
+
 Resources:
 
   # Administrator: Restrict iam:PassRole to prevent arbitrary use of these
@@ -354,7 +376,6 @@ Resources:
       # Cross-account:
       RoleName: !Sub "${UniqueNamePrefix}-InvokeCopyLambdaFnInBackupAcctRole-${AWS::Region}"
 
-      Description: !Sub "For ${AWS::Region} region"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -395,11 +416,13 @@ Resources:
             Action: sqs:*
             Resource: "*"
             Condition:
-              Bool: { aws:SecureTransport: "false" }
+              Bool: { "aws:SecureTransport": "false" }
           - Effect: Allow
             Principal: "*"
             Action: sqs:GetQueueAttributes
             Resource: "*"
+            Condition:
+              StringEquals: { "aws:PrincipalOrgId": !Ref OrgId }
           - Sid: DeadLetterSource
             Effect: Allow
             Principal: "*"
@@ -427,6 +450,12 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Description: !Sub "For ${AWS::Region} region"
+      # Conspicuous in the AWS Console. Prefer CloudFormation naming and one
+      # role per region, for a role that is not referenced from other AWS
+      # accounts. One all-region role would: be a little less secure,
+      # require an extra parameter (region in which to house roles), and
+      # create a cross-region deployment order dependency.
+
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -479,7 +508,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: NotInBackupAccount
     Properties:
-      Description: !Sub "For ${AWS::Region} region"
+      Description: !Sub "For ${AWS::Region} region"  # Conspicuous Console
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -586,6 +615,20 @@ Resources:
       MessageRetentionPeriod: 604800  # seconds (7 days)
       ReceiveMessageWaitTimeSeconds: 20  # long polling (lowest cost)
       VisibilityTimeout: 60  # seconds
+      SqsManagedSseEnabled: !If [ SqsKmsKeyNo, true, false ]
+      KmsMasterKeyId:
+        Fn::If:
+          - SqsKmsKeyNo
+          - !Ref AWS::NoValue
+          - Fn::If:
+              - SqsKmsKeyCustom
+              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${SqsKmsKey}"
+              - !Ref SqsKmsKey
+      KmsDataKeyReusePeriodSeconds:
+        Fn::If:
+          - SqsKmsKeyNo
+          - !Ref AWS::NoValue
+          - 86400  # seconds (24 hours)
 
   CopyLambdaFnLogGrp:
     Type: AWS::Logs::LogGroup
