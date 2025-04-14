@@ -23,9 +23,9 @@ Parameters:
   EnableCopy:
     Type: String
     Description: >-
-      No catch-up feature! Backups completed while this is false will never be
-      copied to the backup account. Copies completed while this is false will
-      never be copied to the backup region.
+      Original backups completed while this is false will never be copied to
+      the backup account. Copies completed while this is false will never be
+      copied to the backup region. No catch-up provision!
     Default: "true"
     AllowedValues:
       - "false"
@@ -34,10 +34,11 @@ Parameters:
   EnableUpdateLifecycle:
     Type: String
     Description: >-
-      No catch-up feature! Backups completed while this is false will never
-      have their lifecycles updated for early deletion. 3 copies (2 copies in
-      the backup account, plus the original backup) will be retained according
-      to the backup's initial lifecycle.
+      Original backups completed while this is false will never have their
+      lifecycles updated for early deletion. 3 copies (the usual 2 copies in
+      the backup account, plus the original backup, in its original account)
+      will be retained according to the backup's initial lifecycle. No
+      catch-up provision!
     Default: "true"
     AllowedValues:
       - "false"

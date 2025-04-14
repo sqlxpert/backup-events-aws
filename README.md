@@ -35,6 +35,8 @@ Jump to:
 &bull;
 [Security](#security)
 
+![The main components of Backup Events are: an AWS Backup vault in every account and region; 3 event rules in resource accounts; backup copy and retention reduction AWS Lambda functions in resource accounts; and a copy function in the backup account]( backup-events-aws-components.png "Components of Backup Events")
+
 ## Quick Start
 
  1. Check prerequisites.
@@ -320,9 +322,14 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Test Backup Events in your AWS environment. Please
   [report bugs](https://github.com/sqlxpert/backup-events-aws/issues).
 
-- Test your backups! Can they be restored?
+- You could base automated alerts on the information sources in Step 13 of the
+  [quick-start](#quick-start), but what really counts is the presence and
+  restorability of final backups. Automated restoration testing and a backup
+  policy with a flexible replacement algorithm (in case the backup from the
+  first day of the month is unavailable, substitute the one from the second
+  day, and so on, within a reasonable limit) is a better initial investment.
   [AWS Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
-  can help.
+  looks promising!
 
 - Set lifecycles in your backup plans, and when making on-demand backups, but
   **specify 7 days minimum before backups are transitioned to cold storage** /
@@ -345,11 +352,19 @@ software at your own risk. You are encouraged to evaluate the source code._
 
 - ([Code](https://github.com/aws-samples/aws-blog-automate-amazon-rds-cross-account-backups))
   [Automate cross-account backups of RDS and Aurora databases with AWS Backup](https://aws.amazon.com/blogs/database/automate-cross-account-backups-of-amazon-rds-and-amazon-aurora-databases-with-aws-backup/)<br>
-  Enrique Ramirez, AWS Database Blog, October 14, 2021
+  Enrique Ramirez, _AWS Database Blog_, October 14, 2021
 
 - ([Code](https://github.com/aws-samples/eventbridge-cross-account-targets))
   [Introducing cross-account targets for EventBridge Event Buses](https://aws.amazon.com/blogs/compute/introducing-cross-account-targets-for-amazon-eventbridge-event-buses/)<br>
-  Chris McPeek, AWS Compute Blog, January 21, 2025
+  Chris McPeek, _AWS Compute Blog_, January 21, 2025
+
+### Going Deeper
+
+- [AWS Backup and AWS CloudFormation](https://docs.aws.amazon.com/aws-backup/latest/devguide/integrate-cloudformation-with-aws-backup.html)<br>
+  _AWS Backup Developer Guide_
+
+- [What's New: KMS Multi-Region Keys](https://aws.amazon.com/blogs/security/encrypt-global-data-client-side-with-aws-kms-multi-region-keys/)<br>
+  June 16, 2021, _AWS Security Blog_, Jeremy Stieglitz, Ben Farley, and Peter Zieske
 
 ## Motivation
 
@@ -374,21 +389,20 @@ remember wishing for a simpler, self-documenting function.
 So, Paul decided to write a new solution from scratch, on his own behalf. The
 benefits?
 
-- One CloudFormation template replaces AWS's three templates. Advanced
-  users can use the template to create a StackSet for deployment at scale.
-  Whether the current AWS account and region match the backup account and
-  backup region determines which AWS resources are created, and what the
-  source and target strings are.
+- One CloudFormation template replaces AWS's three separate templates.
+  Advanced users can create a StackSet for deployment at scale. Whether the
+  current AWS account and region match the backup account and backup region
+  determines backup source and target strings, and which resources to create.
 
-- On-demand backups are supported. AWS's solution depends on a copy step
-  that can be included in backup plans but not in on-demand backup requests.
+- On-demand backups work, too. AWS's solution depends on a copy step available
+  in backup plans but not on-demand backup requests.
 
-- Advanced users can provide a multi-region KMS key. For now, Paul is not
+- Advanced users can provide a multi-region KMS key. (For now, Paul is not
   publishing his test key definitions and key policies. The risk that an LLM
   will treat a general example as specific, and that the security of some
   important system will be compromised, is too great. If you need help with
   multi-region, cross-account KMS encryption keys, least-privilege IAM
-  policies, etc., contact Paul!
+  policies, etc., contact Paul!)
 
 - Object-oriented Python code interprets backup job completed events and
   copy job completed events. A superclass covers the many similarities and a
@@ -405,6 +419,7 @@ benefits?
   eliminates a custom event bus. Paul goes further than the AWS Compute blog
   post and sample code, restricting permissions as much as possible.
 
+Enjoy!
 </details>
 
 ## Licenses
