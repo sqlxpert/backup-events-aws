@@ -79,8 +79,9 @@ Jump to:
  2. Log in to the AWS Console as an administrator, in the AWS account where
     you would like your backups to be stored.
 
-    - You will need to paste you backup account number several times. Open the
-      menu at the top right corner of the AWS Console and copy the Account ID.
+    - You will need to paste your backup account number several times. Open
+      the menu at the top right corner of the AWS Console and copy the Account
+      ID.
 
  3. Switch to your main region, that is, the region where most of your
     resources (housed in another account) are.
