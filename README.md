@@ -19,10 +19,12 @@
   - Try the sample backup vaults, or "bring your own vaults" (BYOV).
 
   - Try the default `aws/backup` KMS key, which lets you experiment by backing
-    up unencrypted EFS file systems -- or "bring your own key" (BYOK).
+    up unencrypted EFS file systems -- or "bring your own key" (BYOK) to back
+    up any
+    [resources that AWS Backup supports](https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-feature-availability.html#features-by-resource).
 
   - Create 3 CloudFormation stacks from 1 template for a minimum installation,
-    or deploy across many accounts and regions by creating a StackSet.
+    or deploy across many accounts and regions with a StackSet.
 
 Jump to:
 [Quick Start](#quick-start)
@@ -35,18 +37,19 @@ Jump to:
 
 ## Quick Start
 
- 1. Check the prerequisites...
+ 1. Check prerequisites.
 
     If you have already used AWS Backup from the AWS Console, to make a backup
-    in one AWS account (your "main account") and copy the backup to another
-    account (your "backup account"), you are probably ready for the
-    quick-start. Find your `o-` Organization ID in the lower left corner of
-    the
+    in one AWS account (your "main account") and copy it to another AWS
+    account ("your backup account"), you are ready to try the quick-start.
+    Find your `o-` Organization ID in the lower left corner of the
     [AWS Organizations](https://us-east-1.console.aws.amazon.com/organizations/v2/home/accounts)
     console page.
 
     <details>
       <summary>For complex environments, or if you are new to AWS Backup...</summary>
+
+    Check that:
 
     - AWS Organizations is configured.
     - Every AWS account where you intend to install Backup Events is in your
@@ -84,7 +87,7 @@ Jump to:
       ID.
 
  3. Switch to your main region, that is, the region where most of your
-    resources (housed in another account) are.
+    resources (housed in a different account) are.
 
     - Your main region will double as the _alternate_ for your backup region.
 
@@ -101,7 +104,7 @@ Jump to:
     - Backup region - _Specify a different region that you do not use much_
     - Alternate for backup region - _From quick-start Step 3_
     - Days (from creation) to keep original backups - _Note, but do not change
-      this for the quick-start. With incremental backups, aim to keep the
+      this, for the quick-start. With incremental backups, aim to keep the
       previous one
       [long enough](https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html)
       for the next scheduled backup to complete._
@@ -143,7 +146,7 @@ Jump to:
     of a copy job. At that point, the original backup should show a "Retention
     period" of 8 days (instead of the initial 14 days).
 
-    Switch to the backup AWS account and check for copies of your backup in
+    Switch to your backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
 13. In case of trouble, focus on the main region and check, in both accounts
@@ -163,8 +166,8 @@ Jump to:
     backups expire, at a small cost).
 
     - You will not be able to fully delete a Backup Events CloudFormation
-      stack if backups remain in the stack's sample vault. This prevents the
-      proliferation of unmanaged vaults.
+      stack as long as backups remain in the stack's sample vault. This
+      prevents the proliferation of unmanaged vaults.
 
 ## Accounts and Regions
 
@@ -308,6 +311,13 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Test your backups! Can they be restored?
   [AWS Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
   can help.
+
+- Set lifecycles in your backup plans, and when making on-demand backups, but
+  **specify 7 days minimum before backups are transitioned to cold storage** /
+  the "archive tier". Allow time for cross-account and cross-region copies to
+  complete, and for original backups to be scheduled for deletion. If the
+  original backup or the first copy enters cold storage too soon, you pay to
+  store it for 90 days, and possibly to retrieve it for copying.
 
 - Compare backup storage costs over time to assess the success of your
   NewDeleteAfterDays setting (which is applied to original backups, after they
