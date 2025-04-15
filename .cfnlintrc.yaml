@@ -1,0 +1,8 @@
+---
+# Cross-account, cross-region backups with AWS Backup and EventBridge
+# github.com/sqlxpert/lights-off-aws/  GPLv3  Copyright Paul Marcelin
+
+ignore_checks:
+  - W2510
+  # W2510: Lambda Memory Size parameters should use MinValue, MaxValue or
+  #        AllowedValues: See comment about "underlying APIs"
