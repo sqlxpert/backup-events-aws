@@ -1,41 +1,115 @@
 # Backup Events
 
-AWS&nbsp;Backup is the official service for backing up resources such as: RDS,
-Aurora and DynamoDB databases; EBS disk volumes; entire EC2 instances; EFS file
-systems; entire S3 buckets; and, as of November,&nbsp;2025,
-[Elastic Kubernetes Service (EKS) clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks).
+_AWS&nbsp;Backup is the official service for backing up RDS, Aurora and
+DynamoDB databases; EBS&nbsp;disk volumes; entire EC2&nbsp;instances;
+EFS&nbsp;file systems; entire S3&nbsp;buckets; and, as of November,&nbsp;2025,
+[Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks)._
 
-Backup Events automatically:
+Backup Events automatically **copies&nbsp;on‑demand&nbsp;backups&nbsp;to**:
 
-- **Copies your backups to a separate account** ("Central Backup" if you use
+- **a&nbsp;separate&nbsp;account** ("Central Backup" if you use
   [Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/enable-backup.html)
   or follow
-  [multi-account best practices](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/infrastructure-ou-and-accounts.html#backup-account)).
-
-- **Copies your backups to a second region** for compliance, disaster recovery, or
+  [multi-account best practices](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/infrastructure-ou-and-accounts.html#backup-account))
+- **and&nbsp;a&nbsp;second&nbsp;region**, for compliance, disaster recovery, or
   just peace-of-mind.
 
-- **Deletes original backups** after they've been copied -- but waits so that you
-  can still save money with
-  [incremental backups](https://docs.aws.amazon.com/aws-backup/latest/devguide/creating-a-backup.html#incremental-backup-works).
+Then, it deletes the original backup to **save&nbsp;money**.
 
-You can get started quickly, or customize Backup Events.
+You can get started immediately, or customize Backup Events.
 
 - Try the sample backup vaults, or "bring your own vaults" (BYOV).
-
 - Try the default `aws/backup` KMS key, which lets you experiment by backing
-  up unencrypted EFS file systems -- or "bring your own key" (BYOK) to back
-  up
+  up unencrypted EFS file systems &mdash; or "bring your own key" (BYOK) to
+  back up
   [any resource that AWS&nbsp;Backup supports](https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-feature-availability.html#features-by-resource).
-
 - Use 1&nbsp;CloudFormation&nbsp;template to create: 3&nbsp;stacks for a
   minimum installation _or_ 1&nbsp;Stack*Set* to cover many AWS&nbsp;accounts
   and regions.
 
-Since October,&nbsp;2025, AWS&nbsp;Backup has been able to
-[copy an RDS or Aurora database backup to a different AWS account _and_ a different region in one step](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions).
-Backup Events remains useful for RDS and Aurora backups because it makes copies
-in _two_ regions, in the other account.
+Jump to:
+[Quick Start](#quick-start)
+&bull;
+[Minimum Account Layout](#minimum-account-layout)
+&bull;
+[Multi-Account, Multi-Region Install](#multi-account-multi-region-cloudformation-stackset)
+&bull;
+[Security](#security)
+
+## February,&nbsp;2026 News
+
+Some users can retire Backup Events now that
+[AWS&nbsp;Backup can copy an RDS/Aurora database backup to a different region _and_ account](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions).
+
+You may need to update backup vault access policies to permit
+`backup:CopyFromBackupVault` directly from the vault(s) in the resource
+account(s) and `backup:CopyIntoBackupVault` directly to the vault in the backup
+region of the backup account. `backup:CopyFromBackupVault` from the vaults in
+the backup account is no longer needed.
+
+### Backup Plans
+
+<details>
+  <summary>Update your backup plans...</summary>
+
+<br/>
+
+If you schedule backups with backup plans, update or add the backup plan rule
+elements in **bold**. In this example, `us-east-1` is a resource region,
+*`us-west-2`* is the backup region, `888866664444` is a resource account, and
+*`999977775555`* is the backup account.
+
+|Element|||Value|
+|:---|:---|:---|:---|
+|BackupSelection|[Resources](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupSelection.html#Backup-Type-BackupSelection-Resources)[0]||`arn:aws:rds:us‑east‑1:888866664444:db:Your‑Database`|
+||Resources[1]||`arn:aws:rds:us‑east‑1:888866664444:db‑cluster:Your‑Cluster`|
+|[BackupPlan](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupPlan.html).Rules[0]|[TargetBackupVault](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupRule.html#Backup-Type-BackupRule-TargetBackupVaultName)||`Default` (resource region and resource account are implicit)|
+||**Lifecycle.[DeleteAfterDays](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterDays)** _updated_||NewDeleteAfterDays CloudFormation parameter value|
+||**CopyActions[0]** _new_|[DestinationBackupVaultArn](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_CopyAction.html#Backup-Type-CopyAction-DestinationBackupVaultArn)|`arn:aws:backup:`*`us‑west‑2:999977775555`*`:backup‑vault:Default`|
+|||Lifecycle.DeleteAfterDays|Old value from Rules[0]|
+||**CopyActions[1]** _new_|DestinationBackupVaultArn|`arn:aws:backup:us‑east‑1:`*`999977775555`*`:backup‑vault:Default`|
+|||Lifecycle.DeleteAfterDays|Old value from Rules[0]|
+
+Do not use
+Lifecycle.[DeleteAfterEvent](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterEvent)
+for resource types that support
+[incremental backups](https://docs.aws.amazon.com/aws-backup/latest/devguide/creating-a-backup.html#incremental-backup-works)!
+`DELETE_AFTER_COPY` _looks_ useful, but deleting the previous original backup
+before the next one is complete could turn the next backup into a full backup,
+increasing storage and cross-region data transfer costs.
+
+If you sometimes take on-demand backups in addition to using backup plans, skip
+ahead to
+[On-Demand Backups](#on-demand-backups).
+Otherwise, once you have updated all backup plans, you can delete your Backup
+Events CloudFormation StackSet or stacks.
+(If you still need the sample backup vaults, disable Backup Events instead, by
+updating the `EnableCopy` and `EnableUpdateLifecycle` parameter values to
+`false`&nbsp;.)
+
+</details>
+
+### On-Demand Backups
+
+<details>
+  <summary>Keep Backup Events for on-demand backups...</summary>
+
+<br/>
+
+If you sometimes take on-demand backups, update Backup Events. `v2.0.0`&nbsp;:
+
+- Updates vault access policies for the sample vaults.
+- Ignores backup plan backups (because they support CopyActions) but still
+  copies on-demand backups.
+- Directly copies an on-demand backup from the resource account to _both_ the
+  resource and backup regions in the backup account. This eliminates the Lambda
+  function that copied backups within the backup account.
+- Reduces retention of an on-demand backup after the more important of the two
+  copies, to the backup region, is completed. If the other copy is not
+  completed, intervene within NewDeleteAfterDays to keep the backup available
+  in the resource region.
+
+</details>
 
 Jump to:
 [Quick Start](#quick-start)
@@ -48,16 +122,16 @@ Jump to:
 
 ---
 
-![The main components of Backup Events are: an AWS Backup vault in every account and region; 3 event rules in resource accounts; backup copy and retention reduction AWS Lambda functions in resource accounts; and a copy function in the backup account]( backup-events-aws-components.png "Components of Backup Events")
+![The main components of Backup Events are: an AWS Backup vault in every account and region; 2 event rules in resource accounts; backup copy and backup retention reduction AWS Lambda functions in resource accounts]( media/backup-events-aws-components.png "Components of Backup Events")
 
 ## Quick Start
 
  1. Check prerequisites.
 
-    If you have already used AWS&nbsp;Backup from the console, to make a backup
-    in one AWS account (your "main account") and copy it to another AWS
-    account ("your backup account"), you are ready to try the quick-start. Find
-    your `o-` Organization ID in the lower left corner of the
+    If you have already used AWS&nbsp;Backup from the console, to back up a
+    resource in one AWS account (your "main account") and copy the backup to
+    another AWS account (your "backup account"), you are ready to try the
+    quick-start. Find your `o-` Organization ID in the lower left corner of the
     [AWS&nbsp;Organizations](https://us-east-1.console.aws.amazon.com/organizations/v2/home/accounts)
     console page.
 
@@ -81,11 +155,10 @@ Jump to:
       "Cross-account backup".
     - Under "Service opt-in" (scroll up), EFS (for the quick-start) and any
       other relevant services are enabled.
-    - In every AWS account where you intend to install Backup Events, the
-      [AWSBackupDefaultServiceRole](https://console.aws.amazon.com/iam/home#/roles/details/AWSBackupDefaultServiceRole)
-      exists. If you use the AWS Console, AWS&nbsp;Backup creates this role the
-      first time you make an on-demand backup in a given AWS account.
-      Otherwise, see
+    - [AWSBackupDefaultServiceRole](https://console.aws.amazon.com/iam/home#/roles/details/AWSBackupDefaultServiceRole)
+      exists in your main/resource account(s) and in the backup account. If you
+      use the AWS Console, AWS&nbsp;Backup creates this role the first time you
+      make an on-demand backup in a given AWS account. Otherwise, see
       [Default service role for AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles).
     - Permissions are sufficient and service and resource control policies
       (SCPs and RCPs), permissions boundaries, or session policies do not
@@ -109,7 +182,7 @@ Jump to:
     [CloudFormation stack](https://console.aws.amazon.com/cloudformation/home)
     "With new resources". Under "Specify template", select "Upload a template
     file", then select "Choose file" and navigate to a locally-saved copy of
-    [backup_events_aws.yaml](/backup_events_aws.yaml?raw=true)
+    [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
     [right-click to save as...]. On the next page, set:
 
     - Stack name - _Copy and paste from "For Reference"_
@@ -153,7 +226,9 @@ Jump to:
     [AWS&nbsp;Backup&rarr;My&nbsp;account&rarr;Dashboard&rarr;Create on-demand&nbsp;backup](https://console.aws.amazon.com/backup/home#/dashboard).
 
     - Change "Resource type" to EFS and select your new file system.
-    - Change "Total retention period" to 14&nbsp;days.
+    - Select "Customize backup window", keep "Start within" at 1&nbsp;hour,
+      and reduce "Complete within" to 2&nbsp;hours.
+    - Reduce "Total retention period" to 14&nbsp;days.
     - Change "Backup vault" to BackupEvents-Sample **(important)**.
 
 12. Watch for completion of the backup job, and then creation and completion
@@ -163,16 +238,14 @@ Jump to:
     Switch to your backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
-13. In case of trouble, focus on the main region and check, in both accounts
-    unless otherwise noted,
+13. In case of trouble, focus on the resource region and check the following,
+    in the main/resource account:
 
-    - The [BackupEvents CloudWatch log group(s)](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
+    - The [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
 
-    - The `BackupEvents`
+    - The `BackupEvents-ErrorQueue`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
-      (not in the backup account)
-
-    - [CloudTrail &rarr; Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
+    - [CloudTrail&rarr;Event&nbsp;history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
       Tips: Change "Read-only" to `true` to see more events. Select the gear
       icon at the right to add the "Error code" column.
 
@@ -188,6 +261,11 @@ Jump to:
 The region codes are examples. Choose the regions where your resources are,
 noting potential differences in
 [AWS&nbsp;Backup feature availability by Region](https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-feature-availability.html#features-by-region).
+The account numbers are placeholders.
+
+If you "bring your own vaults" (BYOV), there is no need to deploy Backup Events
+in the backup account. As of `v2.0.0`&nbsp;, the sample vaults are the only
+resources potentially deployed to the backup account.
 
 ### Minimum Account Layout
 
@@ -197,10 +275,10 @@ noting potential differences in
 |Main|`000022224444`|All resources||
 |Backup|`999977775555`|All backups|All copies of backups|
 
-- There is nothing to install in the backup region of the only resource
+- There is nothing to install in the backup region in the only resource
   account, if you do not keep any resources there.
 
-### Typical Account Layout - Extra Region
+### Typical Account Layout
 
 |Region&rarr;<br>Account<br>&darr;||USA East Coast|USA West Coast|Backup|
 |:---|:---|:---:|:---:|:---:|
@@ -227,41 +305,44 @@ noting potential differences in
  3. Review the Backup Events prerequisites in Step&nbsp;1 of the
     [quick-start](#quick-start).
 
-    - If the AWSBackupDefaultServiceRole is not present in every AWS account
-      where you intend to install Backup Events, define and disseminate a
-      custom role, perhaps by creating your own CloudFormation StackSet. (If
-      you write a CloudFormation template, set `RoleName` for a consistent
-      name.) The trust policy must allow
+    - If the AWSBackupDefaultServiceRole is not present in every resource
+      account, define and disseminate a custom role, perhaps by creating your
+      own CloudFormation StackSet. (If you write a CloudFormation template, set
+      `RoleName` for a consistent name.) The trust policy must allow
       `"Principal": { "Service": "backup.amazonaws.com" }` to
-      to `"sts:AssumeRole"` . Attach the
-      `arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup`
+      `"sts:AssumeRole"` . Attach the
+      [`arn:aws:iam::aws:policy/service‑role/AWSBackupServiceRolePolicyForBackup`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSBackupServiceRolePolicyForBackup.html)
       AWS-managed IAM policy. Choose one region in which to deploy your role;
-      roles are account-wide.
+      roles are account-wide. Because of the way AWS&nbsp;Backup cross-account
+      copy requests work, AWSBackupDefaultServiceRole must exist in your backup
+      account even if you define a custom IAM role in your resource accounts.
 
  4. In the management account (or a delegated administrator account), create a
     [CloudFormation StackSet](https://console.aws.amazon.com/cloudformation/home#/stacksets).
     Under "Specify template", select "Upload a template file", then select
     "Choose file" and upload a locally-saved copy of
-    [backup_events_aws.yaml](/backup_events_aws.yaml?raw=true)
+    [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
     [right-click to save as...].
 
     - Set parameters as in Step&nbsp;4 of the [quick-start](#quick-start).
     - IAM role name for copying backups - _Change if you defined and
       disseminated a custom role, above._
 
- 5. Deploy to your backup account and main/resource account(s), in your
-    backup region and main/resource region(s) (including the alternate for
-    your backup region).
+ 5. Deploy the StackSet to your main/resource accounts(s), in all resource
+    regions (and the backup region, if you also have resources in that region).
+
+    If you use the sample vaults, also deploy the StackSet to your backup
+    account, in all resource regions, the backup region, and the alternate for
+    your backup region. As of `v2.0.0`&nbsp;, the sample vaults are the only
+    resources potentially deployed to the backup account.
+
+    Your backup account might be in a different organizational unit than your
+    main/resource account(s).
+    [DeploymentTargets](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeploymentTargets.html)
+    explains the many ways to target or exclude individual accounts and groups
+    of accounts when deploying a CloudFormation StackSet.
 
 ### Installation with Terraform
-
-Terraform users are often willing to wrap a CloudFormation stack in HashiCorp
-Configuration Language, because AWS supplies tools in the form of
-CloudFormation templates. See
-[aws_cloudformation_stack](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudformation_stack)
-. Paul favors CloudFormation because all AWS users have access, the setup
-effort is minimal, and those with a support plan can get CloudFormation help
-from AWS.
 
 Wrapping a CloudFormation _StackSet_ in HCL is much easier than configuring
 and using Terraform to deploy and maintain identical resources in multiple AWS
@@ -281,31 +362,23 @@ software at your own risk. You are encouraged to evaluate the source code._
 ### Security Design Goals
 
 - Least-privilege roles for the AWS Lambda functions
-
   - The role for the function that reduces retention of original backups after
     they have been copied can access backups in any vault in the same AWS
-    account and region. Tampering with the function's source code or
-    environment variables would allow switching vaults. The backup AWS
-    account acts as a security barrier; the function and its role are never
-    created there. (Issue: backup or `recoveryPoint`
-    [ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-resources-for-iam-policies),
-    do not include the vault name, and there is no
-    [condition key](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-policy-keys)
-    such as backup:VaultARN.)
-
+    account and region. Tampering with the function's source code, environment
+    variable or event input would allow switching vaults. The backup account is
+    a security barrier; the function is never deployed there. The problem?
+    [Backup or recoveryPoint ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-recoveryPoint)
+    do not include the vault name, and
+    [UpdateRecoveryPointLifecycle](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-UpdateRecoveryPointLifecycle)
+    does not support an IAM condition key for vault name or ARN.
 - Readable IAM policies, formatted as CloudFormation YAML rather than JSON,
   and broken down into discrete statements by service, resource or principal
-
 - Tolerance for slow operations and clock drift in a distributed system
-
   - The function that reduces retention of original backups after they have
     been copied applies a full-day margin.
-
-- Option to encrypt logs and queued event errors at rest, using the AWS Key
+- Options to encrypt the log and the error queue at rest, using the AWS Key
   Management System (KMS)
-
 - Least-privilege SQS queue policy
-
 - Option to use custom vaults (with custom KMS keys) and a custom role for
   AWS&nbsp;Backup
 
@@ -314,15 +387,11 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Prevent modification of the components, most of which are identified by
   `BackupEvents` in ARNs and in the automatic `aws:cloudformation:stack-name`
   tag.
-
 - Prevent arbitrary invocation of the AWS Lambda functions. See comments in
   the CloudFormation template, including an observation about the limitations
   of Lambda's AddPermission operation.
-
 - Prevent use of the function roles with arbitrary functions. See comments.
-
 - Log infrastructure changes using AWS CloudTrail, and set up alerts.
-
 - Instead of relying on sample vaults, on default `aws/` KMS keys, and on the
   AWSBackupDefaultServiceRole , define custom equivalents with least-privilege
   resource- and/or identity-based policies tailored to your needs.
@@ -333,7 +402,6 @@ software at your own risk. You are encouraged to evaluate the source code._
 
 - Test Backup Events in your AWS environment. Please
   [report bugs](https://github.com/sqlxpert/backup-events-aws/issues).
-
 - You could base automated alerts on the information sources in Step&nbsp;13 of
   the
   [quick-start](#quick-start),
@@ -344,20 +412,16 @@ software at your own risk. You are encouraged to evaluate the source code._
   from the second day, and so on, within reason) is a better investment of
   engineering effort. Consider
   [AWS&nbsp;Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)!
-
-- Set lifecycles in your backup plans, and when making on-demand backups, but
-  **specify 7&nbsp;days minimum before backups are transitioned to cold
-  storage** / the "archive tier". Allow time for cross-account and cross-region
-  copies to complete, and for original backups to be scheduled for deletion. If
-  the original backup or the first copy enters cold storage too soon, you pay
-  to store it for 90&nbsp;days, and possibly to retrieve it for copying.
-
+- Set lifecycles when making on-demand backups, but **specify 7&nbsp;days
+  minimum before backups are transitioned to cold storage** / the "archive
+  tier". Allow time for cross-account and cross-region copies to complete, and
+  for original backups to be scheduled for deletion. If an original backup
+  enters cold storage too soon, you pay to store it for 90&nbsp;days.
 - Compare backup storage costs over time to assess the success of your
   NewDeleteAfterDays setting (which is applied to original backups, after they
   have been copied to your backup account), of incremental backups (if
   applicable), and of the lifecycles you choose when creating backups (which
-  apply to the two copies in your backup account).
-
+  are transferred to the two copies in your backup account).
 - Be aware of other AWS charges including but not limited to: data transfer,
   encryption/decryption, key management, and early deletion from cold storage.
   AWS&nbsp;Backup relies on other AWS services, each with their own charges.
@@ -368,17 +432,14 @@ software at your own risk. You are encouraged to evaluate the source code._
   [Automate cross-account backups of RDS and Aurora databases with AWS&nbsp;Backup](https://aws.amazon.com/blogs/database/automate-cross-account-backups-of-amazon-rds-and-amazon-aurora-databases-with-aws-backup/)<br>
   Enrique Ramirez, _AWS Database Blog_, October 14, 2021
 
-- ([Code](https://github.com/aws-samples/eventbridge-cross-account-targets))
-  [Introducing cross-account targets for EventBridge Event Buses](https://aws.amazon.com/blogs/compute/introducing-cross-account-targets-for-amazon-eventbridge-event-buses/)<br>
-  Chris McPeek, _AWS Compute Blog_, January 21, 2025
-
 ### Going Deeper
 
 - [AWS&nbsp;Backup and AWS CloudFormation](https://docs.aws.amazon.com/aws-backup/latest/devguide/integrate-cloudformation-with-aws-backup.html)<br>
   _AWS&nbsp;Backup Developer Guide_
-
 - [What's New: KMS Multi-Region Keys](https://aws.amazon.com/blogs/security/encrypt-global-data-client-side-with-aws-kms-multi-region-keys/)<br>
   June 16, 2021, _AWS Security Blog_, Jeremy Stieglitz, Ben Farley, and Peter Zieske
+- [AWS Backup adds single-action database snapshot copy across AWS Regions and accounts](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions)<br>
+  October 30, 2025, _What's New with AWS_
 
 ## Motivation
 
@@ -403,7 +464,7 @@ but he does remember wishing for a simpler, self-documenting function.
 So, Paul decided to write a new solution from scratch, on his own behalf. The
 benefits?
 
-- One CloudFormation template replaces AWS's three separate templates.
+- 1&nbsp;CloudFormation template replaces AWS's 3&nbsp;separate templates.
   Advanced users can create a StackSet for deployment at scale. Whether the
   current AWS account and region match the backup account and backup region
   determines backup source and target strings, and which resources to create.
@@ -427,11 +488,6 @@ benefits?
 - The function to reduce retention of backups that have been copied is simple.
   Minimum retention periods under various rules are added to a list. At the
   end, the highest minimum is applied.
-
-- From resource accounts, EventBridge directly invokes a Lambda function in
-  the backup account. Cross-account invocation, introduced in January, 2025,
-  eliminates a custom event bus. Paul goes further than the AWS Compute blog
-  post and sample code, restricting permissions as much as possible.
 
 Enjoy!
 </details>
