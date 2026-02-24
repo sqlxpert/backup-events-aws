@@ -38,10 +38,10 @@ Jump to:
 
 ## February,&nbsp;2026 News
 
-Some users can retire Backup Events now that AWS&nbsp;Backup can copy an
-RDS/Aurora database backup to a different region _and_ account in one step.
+At last, AWS&nbsp;Backup can copy an RDS/Aurora database backup to a different
+region _and_ account in one step!
 
-You may have to update vault access policies. Be sure to permit
+You may have to update your vault access policies. Be sure to allow
 `backup:CopyFromBackupVault` directly from vault(s) in the resource
 account(s) and `backup:CopyIntoBackupVault` directly to the vault in the backup
 region of the backup account. `backup:CopyFromBackupVault` from vaults in
@@ -54,10 +54,13 @@ the backup account is no longer needed.
 
 <br/>
 
-If you schedule backups with backup plans, update or add the backup plan rule
-elements in **bold**. In this example, `us-east-1` is a resource region,
-*`us-west-2`* is the backup region, `888866664444` is a resource account, and
-*`999977775555`* is the backup account.
+If you schedule backups with backup plans, update or add the elements shown
+in **bold**. Key to the example:
+
+- Resource region: `us-east-1`
+- Resource account: `888866664444`
+- Backup region: `us-west-2`
+- Backup account: `999977775555`
 
 |Element|||Value|
 |:---|:---|:---|:---|
@@ -65,27 +68,27 @@ elements in **bold**. In this example, `us-east-1` is a resource region,
 ||Resources[1]||`arn:aws:rds:us‑east‑1:888866664444:db‑cluster:Your‑Cluster`|
 |[BackupPlan](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupPlan.html).Rules[0]|[TargetBackupVault](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupRule.html#Backup-Type-BackupRule-TargetBackupVaultName)||`Default` (resource region and resource account are implicit)|
 ||**Lifecycle.[DeleteAfterDays](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterDays)** _updated_||NewDeleteAfterDays CloudFormation parameter value|
-||**CopyActions[0]** _new_|[DestinationBackupVaultArn](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_CopyAction.html#Backup-Type-CopyAction-DestinationBackupVaultArn)|`arn:aws:backup:`*`us‑west‑2:999977775555`*`:backup‑vault:Default`|
+||**CopyActions[0]** _new_|[DestinationBackupVaultArn](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_CopyAction.html#Backup-Type-CopyAction-DestinationBackupVaultArn)|`arn:aws:backup:us‑west‑2:999977775555:backup‑vault:Default`|
 |||Lifecycle.DeleteAfterDays|Old value from Rules[0]|
-||**CopyActions[1]** _new_|DestinationBackupVaultArn|`arn:aws:backup:us‑east‑1:`*`999977775555`*`:backup‑vault:Default`|
+||**CopyActions[1]** _new_|DestinationBackupVaultArn|`arn:aws:backup:us‑east‑1:999977775555:backup‑vault:Default`|
 |||Lifecycle.DeleteAfterDays|Old value from Rules[0]|
 
-Do not use
+Avoid using
 Lifecycle.[DeleteAfterEvent](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterEvent)
-for resource types that support
+for resources that support
 [incremental backups](https://docs.aws.amazon.com/aws-backup/latest/devguide/creating-a-backup.html#incremental-backup-works)!
-`DELETE_AFTER_COPY` _looks_ useful, but deleting the previous original backup
-before the next one is complete could turn the next backup into a full backup,
+With `DELETE_AFTER_COPY`&nbsp;, the previous original backup might be deleted
+before the next one is complete. This could make each new backup a full backup,
 increasing storage and cross-region data transfer costs.
 
-If you sometimes take on-demand backups in addition to using backup plans, skip
-ahead to
+If you sometimes take on-demand backups in addition to scheduling backups with
+backup plans, skip ahead to
 [On-Demand Backups](#on-demand-backups).
-Otherwise, once you have updated all backup plans, you can delete your Backup
-Events CloudFormation StackSet or stacks.
-(If you still need the sample backup vaults, disable Backup Events instead, by
-updating the `EnableCopy` and `EnableUpdateLifecycle` parameter values to
-`false`&nbsp;.)
+
+If you never take on-demand backups, you can retire your Backup Events
+CloudFormation StackSet or stacks after you have updated your backup plans. (To
+retain the sample backup vaults, disable Backup Events instead, by changing the
+`EnableCopy` and `EnableUpdateLifecycle` parameters to `false`&nbsp;.)
 
 </details>
 
@@ -98,7 +101,6 @@ updating the `EnableCopy` and `EnableUpdateLifecycle` parameter values to
 
 If you sometimes take on-demand backups, update Backup Events. `v2.0.0`&nbsp;:
 
-- Updates vault access policies for the sample vaults.
 - Ignores scheduled backups from backup plans (because plans support
   CopyActions) but still copies on-demand backups.
 - Directly copies an on-demand backup from the resource account to _both_ the
