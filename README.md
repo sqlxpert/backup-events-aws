@@ -5,16 +5,16 @@ DynamoDB databases; EBS&nbsp;disk volumes; entire EC2&nbsp;instances;
 EFS&nbsp;file systems; entire S3&nbsp;buckets; and, as of November,&nbsp;2025,
 [Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks)._
 
-Backup Events automatically **copies&nbsp;on‑demand&nbsp;backups&nbsp;to**:
+Backup Events automatically **copies on‑demand backups to**:
 
-- **a&nbsp;separate&nbsp;account** ("Central Backup" if you use
+- **a separate account** ("Central Backup" if you use
   [Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/enable-backup.html)
   or follow
   [multi-account best practices](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/infrastructure-ou-and-accounts.html#backup-account))
-- **and&nbsp;a&nbsp;second&nbsp;region**, for compliance, disaster recovery, or
+- **and a second region**, for compliance, disaster recovery, or
   just peace-of-mind.
 
-Then, it deletes the original backup to **save&nbsp;money**.
+Then, it deletes the original backup to **save money**.
 
 You can get started immediately, or customize Backup Events.
 
@@ -38,13 +38,13 @@ Jump to:
 
 ## February,&nbsp;2026 News
 
-Some users can retire Backup Events now that
-[AWS&nbsp;Backup can copy an RDS/Aurora database backup to a different region _and_ account](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions).
+Some users can retire Backup Events now that AWS&nbsp;Backup can copy an
+RDS/Aurora database backup to a different region _and_ account in one step.
 
-You may need to update backup vault access policies to permit
-`backup:CopyFromBackupVault` directly from the vault(s) in the resource
+You may have to update vault access policies. Be sure to permit
+`backup:CopyFromBackupVault` directly from vault(s) in the resource
 account(s) and `backup:CopyIntoBackupVault` directly to the vault in the backup
-region of the backup account. `backup:CopyFromBackupVault` from the vaults in
+region of the backup account. `backup:CopyFromBackupVault` from vaults in
 the backup account is no longer needed.
 
 ### Backup Plans
@@ -99,15 +99,12 @@ updating the `EnableCopy` and `EnableUpdateLifecycle` parameter values to
 If you sometimes take on-demand backups, update Backup Events. `v2.0.0`&nbsp;:
 
 - Updates vault access policies for the sample vaults.
-- Ignores backup plan backups (because they support CopyActions) but still
-  copies on-demand backups.
+- Ignores scheduled backups from backup plans (because plans support
+  CopyActions) but still copies on-demand backups.
 - Directly copies an on-demand backup from the resource account to _both_ the
-  resource and backup regions in the backup account. This eliminates the Lambda
-  function that copied backups within the backup account.
+  resource and backup regions in the backup account.
 - Reduces retention of an on-demand backup after the more important of the two
-  copies, to the backup region, is completed. If the other copy is not
-  completed, intervene within NewDeleteAfterDays to keep the backup available
-  in the resource region.
+  copies, to the backup region, is completed.
 
 </details>
 
