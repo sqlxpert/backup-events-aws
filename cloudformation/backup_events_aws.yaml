@@ -438,9 +438,7 @@ Resources:
               {
                 "Sid": "${SourceLambdaFnsSid}",
                 "Effect": "Allow",
-                "Principal": {
-                  "Service": "lambda.amazonaws.com"
-                },
+                "Principal": "*",
                 "Action": "sqs:SendMessage",
                 "Resource": "*",
                 "Condition": {
@@ -768,7 +766,7 @@ Resources:
             MaximumEventAgeInSeconds: 36000  # 10 hours
           DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
 
-        - Id: CopyToBackupAccountOriginalRegion"
+        - Id: CopyToBackupAccountOriginalRegion
           InputTransformer:
             InputTemplate: !Sub |
               {
@@ -874,7 +872,7 @@ Resources:
             - createdBy:
                 backupPlanArn: [ { "exists": false } ]
       Targets:
-        - Id: !Ref ErrorQueue
+        - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 1800  # 30 minutes
