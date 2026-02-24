@@ -44,13 +44,6 @@ Parameters:
       - "false"
       - "true"
 
-  OrgId:
-    Type: String
-    Description: >-
-      Example: "o-abcde12345"
-    AllowedPattern: '.+'
-    ConstraintDescription: Must not be blank
-
   BackupAccountId:
     Type: String
     Description: >-
@@ -263,7 +256,6 @@ Metadata:
         Parameters:
           - EnableCopy
           - EnableUpdateLifecycle
-          - OrgId
           - BackupAccountId
           - BackupRegion
           - BackupRegionAlternate
@@ -313,8 +305,6 @@ Metadata:
         default: Enable copying of backups
       EnableUpdateLifecycle:
         default: Enable backup retention reduction
-      OrgId:
-        default: AWS Organization ID
       BackupAccountId:
         default: Backup AWS account
       BackupRegion:
@@ -672,7 +662,7 @@ Resources:
               Principal: "*"
               Condition:
                 StringEquals:
-                  "aws:PrincipalOrgId": !Ref OrgId
+                  "aws:PrincipalOrgId": "${aws:ResourceOrgID}"
                 ArnLike:
                   "aws:PrincipalArn": !Sub "arn:aws:iam::*:role/${CopyRoleName}"
               Action: backup:CopyIntoBackupVault
@@ -686,7 +676,7 @@ Resources:
               Resource: "*"
               Condition:
                 "ForAllValues:StringNotLike":
-                  "backup:CopyTargetOrgPaths": !Sub "${OrgId}/*"
+                  "backup:CopyTargetOrgPaths": "${aws:ResourceOrgID}/*"
             - Sid: CopyOnlyToSameVaultInBackupOrResourceRegionInBackupAccount
               Effect: Deny
               Principal: "*"
@@ -761,7 +751,7 @@ Resources:
                 backupPlanArn: [ { "exists": false } ]
       Targets:
 
-        - Id: !Sub "${CopyLambdaFn}-BackupRegion"
+        - Id: CopyToBackupAccountBackupRegion
           InputTransformer:
             InputTemplate: !Sub
               - |
@@ -778,7 +768,7 @@ Resources:
             MaximumEventAgeInSeconds: 36000  # 10 hours
           DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
 
-        - Id: !Sub "${CopyLambdaFn}-ResourceRegion"
+        - Id: CopyToBackupAccountOriginalRegion"
           InputTransformer:
             InputTemplate: !Sub |
               {
@@ -811,7 +801,7 @@ Resources:
             - createdBy:
                 backupPlanArn: [ { "exists": false } ]
       Targets:
-        - Id: !Ref ErrorQueue
+        - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 1800  # 30 minutes
@@ -844,7 +834,7 @@ Resources:
             - createdBy:
                 backupPlanArn: [ { "exists": false } ]
       Targets:
-        - Id: !Ref UpdateLifecycleLambdaFn
+        - Id: UpdateOriginalBackupLifecycle
           InputTransformer:
             InputTemplate: !Sub |
               {

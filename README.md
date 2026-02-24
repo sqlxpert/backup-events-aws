@@ -55,7 +55,7 @@ the backup account is no longer needed.
 <br/>
 
 If you schedule backups with backup plans, update or add the elements shown
-in **bold**. Key to the example:
+in **bold**. In this example,
 
 - Resource region: `us-east-1`
 - Resource account: `888866664444`
@@ -87,7 +87,7 @@ backup plans, skip ahead to
 
 If you never take on-demand backups, you can retire your Backup Events
 CloudFormation StackSet or stacks after you have updated your backup plans. (To
-retain the sample backup vaults, disable Backup Events instead, by changing the
+retain the sample vaults, disable Backup Events instead, by changing the
 `EnableCopy` and `EnableUpdateLifecycle` parameters to `false`&nbsp;.)
 
 </details>
@@ -95,18 +95,19 @@ retain the sample backup vaults, disable Backup Events instead, by changing the
 ### On-Demand Backups
 
 <details>
-  <summary>Keep Backup Events for on-demand backups...</summary>
+  <summary>Update Backup Events...</summary>
 
 <br/>
 
-If you sometimes take on-demand backups, update Backup Events. `v2.0.0`&nbsp;:
+If you sometimes take on-demand backups, update your Backup Events
+CloudFormation StackSet or stacks. `v2.0.0`&nbsp;:
 
 - Ignores scheduled backups from backup plans (because plans support
   CopyActions) but still copies on-demand backups.
 - Directly copies an on-demand backup from the resource account to _both_ the
   resource and backup regions in the backup account.
 - Reduces retention of an on-demand backup after the more important of the two
-  copies, to the backup region, is completed.
+  copies, to the backup region, has been completed.
 
 </details>
 
@@ -130,9 +131,7 @@ Jump to:
     If you have already used AWS&nbsp;Backup from the console, to back up a
     resource in one AWS account (your "main account") and copy the backup to
     another AWS account (your "backup account"), you are ready to try the
-    quick-start. Find your `o-` Organization ID in the lower left corner of the
-    [AWS&nbsp;Organizations](https://us-east-1.console.aws.amazon.com/organizations/v2/home/accounts)
-    console page.
+    quick-start.
 
     <details>
       <summary>For complex environments, or if you are new to AWS Backup...</summary>
@@ -185,7 +184,6 @@ Jump to:
     [right-click to save as...]. On the next page, set:
 
     - Stack name - _Copy and paste from "For Reference"_
-    - AWS Organization ID - _From quick-start Step&nbsp;1_
     - Backup AWS account - _From quick-start Step&nbsp;2_
     - Backup region - _Specify a different region that you do not use much_
     - Alternate for backup region - _From quick-start Step&nbsp;3_
