@@ -23,9 +23,8 @@ Parameters:
   EnableCopy:
     Type: String
     Description: >-
-      Original backups completed while this is false will never be copied to
-      the backup account. Copies completed while this is false will never be
-      copied to the backup region. No catch-up provision!
+      On-demand backups completed while this is false will never be copied to
+      the backup account and backup region. No catch-up provision!
     Default: "true"
     AllowedValues:
       - "false"
@@ -34,7 +33,7 @@ Parameters:
   EnableUpdateLifecycle:
     Type: String
     Description: >-
-      Original backups completed while this is false will never have their
+      On-demand backups completed while this is false will never have their
       lifecycles updated for early deletion. 3 copies (the usual 2 copies in
       the backup account, plus the original backup, in its original account)
       will be retained according to the backup's initial lifecycle. No
@@ -743,10 +742,8 @@ Resources:
           state: [ COMPLETED ]
           backupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
-          "$or":
-            - createdBy: [ { "exists": false } ]
-            - createdBy:
-                backupPlanArn: [ { "exists": false } ]
+          createdBy:
+            backupPlanArn: [ { "exists": false } ]
       Targets:
 
         - Id: CopyToBackupAccountBackupRegion
@@ -794,10 +791,8 @@ Resources:
           state: [ FAILED ]
           backupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
-          "$or":
-            - createdBy: [ { "exists": false } ]
-            - createdBy:
-                backupPlanArn: [ { "exists": false } ]
+          createdBy:
+            backupPlanArn: [ { "exists": false } ]
       Targets:
         - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
@@ -827,10 +822,8 @@ Resources:
                   - InBackupRegion
                   - !Ref BackupRegionAlternate
                   - !Ref BackupRegion
-          "$or":
-            - createdBy: [ { "exists": false } ]
-            - createdBy:
-                backupPlanArn: [ { "exists": false } ]
+          createdBy:
+            backupPlanArn: [ { "exists": false } ]
       Targets:
         - Id: UpdateOriginalBackupLifecycle
           InputTransformer:
@@ -867,10 +860,8 @@ Resources:
                   - InBackupRegion
                   - !Ref BackupRegionAlternate
                   - !Ref BackupRegion
-          "$or":
-            - createdBy: [ { "exists": false } ]
-            - createdBy:
-                backupPlanArn: [ { "exists": false } ]
+          createdBy:
+            backupPlanArn: [ { "exists": false } ]
       Targets:
         - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
@@ -942,7 +933,7 @@ Resources:
       # S3), supply shared, multi-handler source code in-line...
       Environment:
         Variables:
-          BACKUP_VAULT_NAME: !Ref VaultName
+          VAULT_NAME: !Ref VaultName
           COPY_ROLE_ARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
           AWS_PARTITION: !Ref AWS::Partition
           BACKUP_ACCOUNT_ID: !Ref BackupAccountId
@@ -1108,7 +1099,7 @@ Resources:
 
             @property
             def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
-              return int(self._destination_vault_arn)
+              return self._destination_vault_arn
 
             def validate(self):
               super().validate()
@@ -1263,7 +1254,7 @@ Resources:
       # S3), supply shared, multi-handler source code in-line...
       Environment:
         Variables:
-          BACKUP_VAULT_NAME: !Ref VaultName
+          VAULT_NAME: !Ref VaultName
       Handler: index.lambda_handler_update_lifecycle
       Code:
         ZipFile: |
@@ -1426,7 +1417,7 @@ Resources:
 
             @property
             def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
-              return int(self._destination_vault_arn)
+              return self._destination_vault_arn
 
             def validate(self):
               super().validate()

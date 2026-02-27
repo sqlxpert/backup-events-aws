@@ -157,7 +157,7 @@ class BackupJobResult(Backup):
 
   @property
   def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
-    return int(self._destination_vault_arn)
+    return self._destination_vault_arn
 
   def validate(self):
     super().validate()
