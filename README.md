@@ -1,8 +1,8 @@
 # Backup Events
 
-_AWS&nbsp;Backup is the official service for backing up RDS, Aurora and
-DynamoDB databases; EBS&nbsp;disk volumes; entire EC2&nbsp;instances;
-EFS&nbsp;file systems; entire S3&nbsp;buckets; and, as of November,&nbsp;2025,
+_AWS&nbsp;Backup is the official backup service for RDS, Aurora and DynamoDB
+databases; EBS&nbsp;disk volumes; entire EC2&nbsp;instances; EFS&nbsp;file
+systems; entire S3&nbsp;buckets; and, as of November,&nbsp;2025,
 [Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks)._
 
 Backup Events automatically **copies on‑demand backups to**:
@@ -38,8 +38,8 @@ Jump to:
 
 ## February,&nbsp;2026 News
 
-At last, AWS&nbsp;Backup can copy an RDS/Aurora database backup to a different
-region _and_ account in one step!
+At last, AWS&nbsp;Backup can copy an RDS or Aurora database backup to a
+different region _and_ account in one step!
 
 You may have to update your vault access policies. Be sure to allow
 `backup:CopyFromBackupVault` directly from vault(s) in the resource
@@ -57,10 +57,10 @@ the backup account is no longer needed.
 If you schedule backups with backup plans, update or add the elements shown
 in **bold**. In this example,
 
-- Resource region: `us-east-1`
-- Resource account: `888866664444`
-- Backup region: `us-west-2`
-- Backup account: `999977775555`
+- Resource region = `us-east-1`
+- Resource account = `888866664444`
+- Backup region = `us-west-2`
+- Backup account = `999977775555`
 
 |Element|||Value|
 |:---|:---|:---|:---|
