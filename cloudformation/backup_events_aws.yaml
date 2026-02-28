@@ -461,7 +461,8 @@ Resources:
                     "aws:SourceArn": [
                       "${BackupCompletedCopyLambdaFnEvRule.Arn}",
                       "${Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
-                      "${CopyFailedSqsErrorQueueEvRule}"
+                      "${BackupFailedSqsErrorQueueEvRule.Arn}",
+                      "${CopyFailedSqsErrorQueueEvRule.Arn}"
                     ],
                     "aws:PrincipalArn": [
                       "${CopyLambdaFnRole.Arn}",
