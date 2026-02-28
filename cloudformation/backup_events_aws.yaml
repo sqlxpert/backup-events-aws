@@ -361,11 +361,10 @@ Rules:
 
   EnableUpdateLifecycleRequiresEnableCopy:
     Assertions:
-      - Assert:
-          Fn::Not:
-            - Fn::And:
-                - !Equals [ !Ref EnableUpdateLifecycle, "true" ]
-                - !Not [ !Equals [ !Ref EnableCopy, "true" ] ]
+      - Assert: !Not
+          - !And
+            - !Equals [ !Ref EnableUpdateLifecycle, "true" ]
+            - !Not [ !Equals [ !Ref EnableCopy, "true" ] ]
         AssertDescription: >-
           EnableUpdateLifecycle requires EnableCopy.
 
@@ -385,10 +384,9 @@ Conditions:
   CloudWatchLogsKmsKeyNo: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
 
   SqsKmsKeyNo: !Equals [ !Ref SqsKmsKey, "" ]
-  SqsKmsKeyCustom:
-    Fn::And:
-      - !Not [ !Condition SqsKmsKeyNo ]
-      - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
+  SqsKmsKeyCustom: !And
+    - !Not [ !Condition SqsKmsKeyNo ]
+    - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
 
 Resources:
 
