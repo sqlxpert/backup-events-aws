@@ -123,9 +123,11 @@ Jump to:
 &bull;
 [Security](#security)
 
----
+## Architecture
 
-![The main components of Backup Events are: an AWS Backup vault in every account and region; 2 event rules in resource accounts; backup copy and backup retention reduction AWS Lambda functions in resource accounts]( media/backup-events-aws-components.png "Components of Backup Events")
+Click to view the architecture diagram:
+
+[<img src="media/backup-events-aws-components.png" alt="1. Every resource account and resource region contains: a backup vault, EventBridge event rules, an AWS Lambda function to copy a backup, a function to update the backup's lifecycle, and an error queue. 2. In the backup account, in every resource region there is a vault in which a copy is kept, based on the original lifecycle. 3. In the backup account, in the backup region and its alternate, there is a vault in which a copy is kept, based on the original lifecycle. A change in an on-demand backup job's state, to 'COMPLETED', triggers two input transformers. One changes the destination region to the backup region or its alternate. The other keeps the current region. The transformed inputs both trigger the same Lambda function, to copy the backup to the backup account. A change in a copy job's state, to 'COMPLETED', triggers a Lambda function which reduces 'delete after days' for the original backup to the earliest allowed value: the next Universal Coordinated Time day, the configured parameter value, or the cold storage minimum. A change in the state of a backup or copy job, to 'FAILED', sends a message to the Simple Queue System error queue." />](media/backup-events-aws-components.png?raw-true "Components of Backup Events")
 
 ## Quick Start
 
@@ -531,10 +533,10 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Up-to-date:** AWS never returned to update the sample solution for
   multi-region encryption keys or direct cross-account Lambda function
-  invocation. Multi-region keys make it easy to move backups, logs and error
-  queue messages between accounts. Direct cross-account invocation eliminates
-  several components. (As of my February,&nbsp;2026 update, a cross-account
-  invocation mechanism is no longer necessary.)
+  invocation. A multi-region key make it easy to move backups between regions.
+  Direct cross-account invocation eliminates several components. (My
+  February,&nbsp;2026 update has eliminated the need for a cross-account
+  invocation mechanism.)
 
 - **Centrally deployable:** 1&nbsp;CloudFormation template replaces AWS's
   3&nbsp;separate templates. Advanced users can use the template to create a
@@ -551,12 +553,12 @@ So, I decided to write a new solution from scratch. The benefits?
   completion. (As of my February,&nbsp;2026, update, only on-demand backups are
   supported.)
 
-- **Supports multi-region encryption keys:** A multi-region KMS key makes
-  moving encrypted backups, logs and error queue messages from one AWS account
-  to another easier. (I am not publishing my custom key policy for AWS&nbsp;Backup.
-  If you need multi-region KMS encryption keys, and key policies that let you
-  manage those keys from a central, limited-access account, contact me! That is
-  the kind of work I do for a living.)
+- **Supports a multi-region, cross-account encryption key:** A multi-region KMS
+  key makes moving encrypted backups from one region to another easier. Housing
+  the key in a central, limited-access account increases control. (I am not
+  publishing my custom key policy for AWS&nbsp;Backup. If you need multi-region
+  KMS encryption keys and least privilege key policies, contact me! It's the
+  kind of work I do for a living.)
 
 - **Streamlined:** Object-oriented Python code interprets backup job events
   and copy job events. An abstract base class covers the many similarities and
