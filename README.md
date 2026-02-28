@@ -504,9 +504,12 @@ software at your own risk. You are encouraged to evaluate the source code._
 <details>
   <summary>What motivated this work? ...</summary>
 
-I discovered the _AWS Database Blog_ post and code sample through a colleague,
-who had used it to back up a fleet of RDS databases with default KMS
-encryption. Thank you, Eugene, for seeking out existing solutions first!
+<br/>
+
+I discovered the _AWS Database Blog_ post and the sample CloudFormation and
+Python code through a colleague, who had used it to back up a fleet of RDS
+databases with default KMS encryption. Thank you, Eugene, for always seeking
+existing solutions first!
 
 To back up a new Aurora database fleet, I wrote native Terraform and adopted
 AWS's sample Lambda function Python source code. Given the importance of the
@@ -530,23 +533,23 @@ So, I decided to write a new solution from scratch. The benefits?
   multi-region encryption keys or direct cross-account Lambda function
   invocation. Multi-region keys make it easy to move backups, logs and error
   queue messages between accounts. Direct cross-account invocation eliminates
-  several components. (As of February,&nbsp;2026, the Lambda functions run
-  entirely in resource accounts, so a cross-account invocation mechanism is no
-  longer necessary.)
+  several components. (As of my February,&nbsp;2026 update, a cross-account
+  invocation mechanism is no longer necessary.)
 
 - **Centrally deployable:** 1&nbsp;CloudFormation template replaces AWS's
-  3&nbsp;separate templates. Advanced users can create a StackSet, eliminating
-  the need to switch accounts and copy the outputs of one stack to the inputs
-  of another. The StackSet opens the door to deployment in an organization that
-  houses resources in many different AWS accounts. Whether the current AWS
-  account and region match the specified backup account and backup region
-  determines which resources are created where.
+  3&nbsp;separate templates. Advanced users can use the template to create a
+  StackSet, eliminating the need to switch accounts and copy the outputs of one
+  stack to the inputs of another. The StackSet opens the door to deployment in
+  an organization that houses resources in many different AWS accounts. Whether
+  the current AWS account and region match the specified backup account and
+  backup region determines which resources are created where.
 
 - **Supports on-demand backups:** AWS's solution depends on the copy step
   available in backup plans but not in on-demand backup requests. Waiting for
   an on-demand backup job to complete before you manually start copy jobs is
-  tedious and prone to error. Also, you might forget to check for completion.
-  (As of February,&nbsp;2026, only on-demand backups are supported.)
+  tedious and prone to error. Also, you might forget to check for copy
+  completion. (As of my February,&nbsp;2026, update, only on-demand backups are
+  supported.)
 
 - **Supports multi-region encryption keys:** A multi-region KMS key makes
   moving encrypted backups, logs and error queue messages from one AWS account
@@ -557,9 +560,9 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Streamlined:** Object-oriented Python code interprets backup job events
   and copy job events. An abstract base class covers the many similarities and
-  subclasses, the few differences. This way, the same primitives serve for copying a backup and for
-  reducing the backup's retention period. If AWS had chosen more consistent key
-  names, subclasses would be unnecessary.
+  subclasses, the few differences. This way, the same primitives serve for
+  copying a backup and for reducing the backup's retention period. If AWS had
+  chosen more consistent key names, subclasses would not be necessary.
 
 - **Simple:** The function to reduce the retention period after copying is easy
   to understand. Minimum retention periods under various rules are added to a
