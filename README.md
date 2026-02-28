@@ -1,8 +1,8 @@
 # Backup Events
 
-_AWS&nbsp;Backup is the official backup service for RDS, Aurora and DynamoDB
-databases; EBS&nbsp;disk volumes; entire EC2&nbsp;instances; EFS&nbsp;file
-systems; entire S3&nbsp;buckets; and, as of November,&nbsp;2025,
+_AWS&nbsp;Backup is the official backup service for RDS, Aurora, DynamoDB and
+DocumentDB databases; EBS disk volumes; entire EC2 instances; EFS file systems;
+entire S3 buckets; and, as of November,&nbsp;2025,
 [Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks)._
 
 Backup Events automatically **copies on‑demand backups to**:
@@ -14,7 +14,10 @@ Backup Events automatically **copies on‑demand backups to**:
 - **and a second region**, for compliance, disaster recovery, or
   just peace-of-mind.
 
-Then, it deletes the original backup to **save money**.
+Then, it **saves money** by scheduling the original backup for deletion.
+
+It also **monitors** on-demand backup and copy jobs, sending a message to an
+error queue if something goes wrong.
 
 You can get started immediately, or customize Backup Events.
 
@@ -192,7 +195,7 @@ Jump to:
       previous one
       [long enough](https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html)
       for the next scheduled backup to complete._
-  
+
  5. Stay in the same AWS account but switch to your backup region.
 
  6. Create a stack from the same template. Set **exactly the same parameter
@@ -314,38 +317,92 @@ resources potentially deployed to the backup account.
       copy requests work, AWSBackupDefaultServiceRole must exist in your backup
       account even if you define a custom IAM role in your resource accounts.
 
- 4. In the management account (or a delegated administrator account), create a
-    [CloudFormation StackSet](https://console.aws.amazon.com/cloudformation/home#/stacksets).
-    Under "Specify template", select "Upload a template file", then select
-    "Choose file" and upload a locally-saved copy of
-    [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
-    [right-click to save as...].
+ 4. Determine the regions and organizational unit(s) in which you will install
+    Backup Events.
 
-    - Set parameters as in Step&nbsp;4 of the [quick-start](#quick-start).
-    - IAM role name for copying backups - _Change if you defined and
-      disseminated a custom role, above._
+    - Cover your main/resource accounts(s), in all resource regions (and the
+      backup region, if you also have resources in that region).
+    - If you will use the sample vaults, also cover your backup account, in all
+      resource regions, the backup region, and the alternate for your backup
+      region. As of `v2.0.0`&nbsp;, the sample vaults are the only resources
+      potentially deployed to the backup account.
+    - Your backup account might be in a different organizational unit than your
+      main/resource account(s).
 
- 5. Deploy the StackSet to your main/resource accounts(s), in all resource
-    regions (and the backup region, if you also have resources in that region).
+ 5. Install Backup Events as a CloudFormation StackSet, using CloudFormation or
+    Terraform. You must use your AWS organization's management account, or a
+    delegated administrator AWS account.
 
-    If you use the sample vaults, also deploy the StackSet to your backup
-    account, in all resource regions, the backup region, and the alternate for
-    your backup region. As of `v2.0.0`&nbsp;, the sample vaults are the only
-    resources potentially deployed to the backup account.
+    - **CloudFormation**<br/>_Easy_ &check;
 
-    Your backup account might be in a different organizational unit than your
-    main/resource account(s).
-    [DeploymentTargets](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeploymentTargets.html)
-    explains the many ways to target or exclude individual accounts and groups
-    of accounts when deploying a CloudFormation StackSet.
+      Create a
+      [CloudFormation StackSet](https://console.aws.amazon.com/cloudformation/home#/stacksets).
+      Under "Specify template", select "Upload a template file", then select
+      "Choose file" and upload a locally-saved copy of
+      [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
+      [right-click to save as...].
+
+      - Set parameters as in Step&nbsp;4 of the
+        [quick-start](#quick-start).
+      - IAM role name for copying backups - _Change if you defined and
+        disseminated a custom role._
+
+    - **Terraform**
+
+      Check that you have at least:
+
+      - [Terraform v1.10.0 (2024-11-27)](https://github.com/hashicorp/terraform/releases/tag/v1.10.0)
+      - [Terraform AWS provider v6.0.0 (2025-06-18)](https://github.com/hashicorp/terraform-provider-aws/releases/tag/v6.0.0)
+
+      Add a child module to your existing root module:
+
+      ```terraform
+      module "backup_events_stackset" {
+        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.0.0"
+        # Reference a specific version from github.com/sqlxpert/backup-events-aws/releases
+
+        backup_events_stackset_regions                   = ["us-east-1", "us-west-2", ]
+        backup_events_stackset_organizational_unit_names = ["MyOrganizationalUnit", ]
+
+        backup_events_stackset_params = {
+          BackupAccountId       = "999977775555"
+          BackupRegion          = "us-west-2"
+          BackupRegionAlternate = "us-east-1"
+        }
+      }
+      ```
+
+      - &#9888; **In Terraform, specify the name(s) of the target organization
+        unit(s)**, not the `ou-` ID(s).
+      - Set parameter keys as in Step&nbsp;4 of the
+        [quick-start](#quick-start).
+      - `CopyRoleName` - _Set if you defined and disseminated a custom role._
+
+      Have Terraform download the module's source code. Review the plan before
+      typing `yes` to allow Terraform to proceed with applying the changes.
+
+      ```shell
+      terraform init
+      terraform apply
+      ```
 
 ### Installation with Terraform
 
-Wrapping a CloudFormation _StackSet_ in HCL is much easier than configuring
-and using Terraform to deploy and maintain identical resources in multiple AWS
-accounts and regions. See
-[aws_cloudformation_stack_set](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudformation_stack_set)
-.
+The
+[enhanced region support](https://registry.terraform.io/providers/hashicorp/aws/6.0.0/docs/guides/enhanced-region-support)
+added in v6.0.0 of the Terraform AWS provider makes it possible to deploy
+resources in multiple regions _in one AWS account_ without configuring a
+separate provider for each region.
+
+Backup Events, however, requires at least two regions and at least two
+accounts.
+
+Wrapping a CloudFormation _StackSet_ in HashiCorp Configuration Language
+remains much easier than configuring Terraform to deploy identical resources in
+multiple AWS accounts. The
+[Multi-Account, Multi-Region (CloudFormation StackSet)](#multi-account-multi-region-cloudformation-stackset)
+installation instructions include the option to do this using a Terraform
+module.
 
 ## Security
 
@@ -368,14 +425,15 @@ software at your own risk. You are encouraged to evaluate the source code._
     do not include the vault name, and
     [UpdateRecoveryPointLifecycle](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-UpdateRecoveryPointLifecycle)
     does not support an IAM condition key for vault name or ARN.
-- Readable IAM policies, formatted as CloudFormation YAML rather than JSON,
-  and broken down into discrete statements by service, resource or principal
+- Readable IAM policies, broken down into discrete statements by service,
+  resource or principal. Policies are formatted as CloudFormation YAML rather
+  than JSON.
 - Tolerance for slow operations and clock drift in a distributed system
   - The function that reduces retention of original backups after they have
     been copied applies a full-day margin.
 - Options to encrypt the log and the error queue at rest, using the AWS Key
   Management System (KMS)
-- Least-privilege SQS queue policy
+- Least-privilege SQS queue policy with support for customization
 - Option to use custom vaults (with custom KMS keys) and a custom role for
   AWS&nbsp;Backup
 
@@ -428,6 +486,9 @@ software at your own risk. You are encouraged to evaluate the source code._
 - ([Code](https://github.com/aws-samples/aws-blog-automate-amazon-rds-cross-account-backups))
   [Automate cross-account backups of RDS and Aurora databases with AWS&nbsp;Backup](https://aws.amazon.com/blogs/database/automate-cross-account-backups-of-amazon-rds-and-amazon-aurora-databases-with-aws-backup/)<br>
   Enrique Ramirez, _AWS Database Blog_, October 14, 2021
+- ([Code](https://github.com/aws-samples/eventbridge-cross-account-targets))
+  [Introducing cross-account targets for EventBridge Event Buses](https://aws.amazon.com/blogs/compute/introducing-cross-account-targets-for-amazon-eventbridge-event-buses/)<br>
+  Chris McPeek, _AWS Compute Blog_, January 21, 2025
 
 ### Going Deeper
 
@@ -435,7 +496,7 @@ software at your own risk. You are encouraged to evaluate the source code._
   _AWS&nbsp;Backup Developer Guide_
 - [What's New: KMS Multi-Region Keys](https://aws.amazon.com/blogs/security/encrypt-global-data-client-side-with-aws-kms-multi-region-keys/)<br>
   June 16, 2021, _AWS Security Blog_, Jeremy Stieglitz, Ben Farley, and Peter Zieske
-- [AWS Backup adds single-action database snapshot copy across AWS Regions and accounts](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions)<br>
+- [AWS&nbsp;Backup adds single-action database snapshot copy across AWS Regions and accounts](https://aws.amazon.com/about-aws/whats-new/2025/10/aws-backup-single-action-database-snapshot-copy-regions)<br>
   October 30, 2025, _What's New with AWS_
 
 ## Motivation
@@ -443,50 +504,68 @@ software at your own risk. You are encouraged to evaluate the source code._
 <details>
   <summary>What motivated this work? ...</summary>
 
-Paul discovered the AWS Database blog post and sample code through a
-colleague, who had used it to back up a fleet of RDS databases with default
-KMS encryption. Thank you, Eugene, for always surveying the landscape first!
+I discovered the _AWS Database Blog_ post and code sample through a colleague,
+who had used it to back up a fleet of RDS databases with default KMS
+encryption. Thank you, Eugene, for seeking out existing solutions first!
 
-To back up a new Aurora database fleet, Paul wrote native Terraform and
-adopted the sample AWS Lambda function Python source code. Given the
-importance of the backups, Paul wrote least-privilege IAM policies for custom
-roles. He had already created customer-managed, multi-region, cross-account
-KMS keys for the new databases.
+To back up a new Aurora database fleet, I wrote native Terraform and adopted
+AWS's sample Lambda function Python source code. Given the importance of the
+backups, I wrote least-privilege IAM policies for a custom backup role. I had
+already created customer-managed, multi-region, cross-account KMS keys for the
+new databases.
 
-Later, he added a function to rewrite AWS&nbsp;Backup lifecycle objects, so
-that backups could be deleted after they had been copied. Paul does not
-remember what he put in that function, and he has moved on from the company,
-but he does remember wishing for a simpler, self-documenting function.
+Later, I added a function to rewrite AWS&nbsp;Backup lifecycle objects, so that
+backups could be deleted after they had been copied. I don't remember what I
+put in that function, and I have since moved on from the company, but I do
+remember wishing for a simpler, self-documenting function.
 
-So, Paul decided to write a new solution from scratch, on his own behalf. The
-benefits?
+So, I decided to write a new solution from scratch. The benefits?
 
-- 1&nbsp;CloudFormation template replaces AWS's 3&nbsp;separate templates.
-  Advanced users can create a StackSet for deployment at scale. Whether the
-  current AWS account and region match the backup account and backup region
-  determines backup source and target strings, and which resources to create.
+- **Open-source:** I can share this software with you because I wrote it on my
+  own behalf. The software not only does something useful but also demonstrates
+  modern, loosely-coupled, event-driven, serverless, secure AWS application
+  architecture.
 
-- On-demand backups work, too. AWS's solution depends on a copy step available
-  in backup plans but not on-demand backup requests.
+- **Up-to-date:** AWS never returned to update the sample solution for
+  multi-region encryption keys or direct cross-account Lambda function
+  invocation. Multi-region keys make it easy to move backups, logs and error
+  queue messages between accounts. Direct cross-account invocation eliminates
+  several components. (As of February,&nbsp;2026, the Lambda functions run
+  entirely in resource accounts, so a cross-account invocation mechanism is no
+  longer necessary.)
 
-- Advanced users can provide a multi-region KMS key. (For now, Paul is not
-  publishing his test key definitions and key policies. The risk that an LLM
-  will treat a general example as specific, and that the security of some
-  important system will be compromised, is too great. If you need help with
-  multi-region, cross-account KMS encryption keys, least-privilege IAM
-  policies, etc., contact Paul!)
+- **Centrally deployable:** 1&nbsp;CloudFormation template replaces AWS's
+  3&nbsp;separate templates. Advanced users can create a StackSet, eliminating
+  the need to switch accounts and copy the outputs of one stack to the inputs
+  of another. The StackSet opens the door to deployment in an organization that
+  houses resources in many different AWS accounts. Whether the current AWS
+  account and region match the specified backup account and backup region
+  determines which resources are created where.
 
-- Object-oriented Python code interprets backup job completed events and
-  copy job completed events. A superclass covers the many similarities and a
-  subclass, the few differences. The same primitives serve for copying a
-  backup to a different account, reducing the original backup's retention,
-  and copying the copy to a different region.
+- **Supports on-demand backups:** AWS's solution depends on the copy step
+  available in backup plans but not in on-demand backup requests. Waiting for
+  an on-demand backup job to complete before you manually start copy jobs is
+  tedious and prone to error. Also, you might forget to check for completion.
+  (As of February,&nbsp;2026, only on-demand backups are supported.)
 
-- The function to reduce retention of backups that have been copied is simple.
-  Minimum retention periods under various rules are added to a list. At the
-  end, the highest minimum is applied.
+- **Supports multi-region encryption keys:** A multi-region KMS key makes
+  moving encrypted backups, logs and error queue messages from one AWS account
+  to another easier. (I am not publishing my custom key policy for AWS&nbsp;Backup.
+  If you need multi-region KMS encryption keys, and key policies that let you
+  manage those keys from a central, limited-access account, contact me! That is
+  the kind of work I do for a living.)
 
-Enjoy!
+- **Streamlined:** Object-oriented Python code interprets backup job events
+  and copy job events. An abstract base class covers the many similarities and
+  subclasses, the few differences. This way, the same primitives serve for copying a backup and for
+  reducing the backup's retention period. If AWS had chosen more consistent key
+  names, subclasses would be unnecessary.
+
+- **Simple:** The function to reduce the retention period after copying is easy
+  to understand. Minimum retention periods under various rules are added to a
+  list. At the end, the highest minimum is applied. The original backup can be
+  deleted as soon as AWS allows, but no sooner!
+
 </details>
 
 ## Licenses
