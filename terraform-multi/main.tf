@@ -14,16 +14,6 @@ data "aws_region" "backup_events_stackset" {
 
 
 
-data "aws_organizations_organization" "current" {}
-data "aws_organizations_organizational_unit" "backup_events_stackset" {
-  for_each = toset(var.backup_events_stackset_organizational_unit_names)
-
-  parent_id = data.aws_organizations_organization.current.roots[0].id
-  name      = each.key
-}
-
-
-
 resource "aws_s3_bucket" "backup_events_cloudformation" {
   force_destroy = true
 
