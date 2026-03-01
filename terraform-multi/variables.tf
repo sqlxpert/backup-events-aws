@@ -83,8 +83,6 @@ variable "backup_events_stackset_params" {
   })
 
   description = "Backup Events CloudFormation StackSet parameter map. Keys are parameter names from cloudformation/backup_events_aws.yaml ; parameters are described there. You must set BackupAccountId , BackupRegion and BackupRegionAlternate . CloudFormation and Terraform data types match, except for Boolean parameters. Terraform converts bool values to CloudFormation String values automatically. Follow Terraform string escape rules for double quotation marks, etc. inside ErrorQueueAdditionalPolicyStatements ."
-
-  default = {}
 }
 
 variable "backup_events_tags" {
