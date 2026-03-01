@@ -23,9 +23,8 @@ Parameters:
   EnableCopy:
     Type: String
     Description: >-
-      Original backups completed while this is false will never be copied to
-      the backup account. Copies completed while this is false will never be
-      copied to the backup region. No catch-up provision!
+      On-demand backups completed while this is false will never be copied to
+      the backup account and backup region. No catch-up provision!
     Default: "true"
     AllowedValues:
       - "false"
@@ -34,7 +33,7 @@ Parameters:
   EnableUpdateLifecycle:
     Type: String
     Description: >-
-      Original backups completed while this is false will never have their
+      On-demand backups completed while this is false will never have their
       lifecycles updated for early deletion. 3 copies (the usual 2 copies in
       the backup account, plus the original backup, in its original account)
       will be retained according to the backup's initial lifecycle. No
@@ -44,46 +43,40 @@ Parameters:
       - "false"
       - "true"
 
-  OrgId:
-    Type: String
-    Description: >-
-      Example: "o-abcde12345"
-    AllowedPattern: '.+'
-    ConstraintDescription: Must not be blank
-
   BackupAccountId:
     Type: String
     Description: >-
       An account different from the one(s) containing resources to back up.
-      Backups will first be copied to this account, with no change in region.
+      Backups will be copied to this account.
     AllowedPattern: '.+'
     ConstraintDescription: Must not be blank
 
   BackupRegion:
     Type: String
     Description: >-
-      Example: "us-east-1". Within the backup account, backup copies that
-      originated in other regions will be copied to this second region.
+      Example: "us-east-1". Backups that originated in other regions will be
+      copied to this second region.
     AllowedPattern: '.+'
     ConstraintDescription: Must not be blank
 
   BackupRegionAlternate:
     Type: String
     Description: >-
-      Within the backup account, backup copies that originated in the backup
-      region will be copied to this alternate second region.
+      Backups that originated in the backup region will be copied to this
+      alternate second region
     AllowedPattern: '.+'
     ConstraintDescription: Must not be blank
 
   NewDeleteAfterDays:
     Type: Number
     Description: >-
-      After a backup has been copied to the backup account, the original
-      backup can be deleted; its lifecycle will be updated. Count days from
-      when it was created. For incremental backups -- such as EBS volume
-      snapshots (including those making up EC2 images AMIs), RDS (but not
-      Aurora) database snapshots, and EFS file system backups -- do not reduce
-      this below the number of days between scheduled AWS Backup backups. See
+      After a backup has been copied to the backup region and backup account,
+      the original backup can be deleted; its lifecycle will be updated. Count
+      days from when it was created. For incremental backups -- such as EBS
+      volume snapshots (including those making up EC2 images AMIs), RDS (but
+      not Aurora) database snapshots, and EFS file system backups -- do not
+      reduce this below the number of days between scheduled AWS Backup
+      backups. See
       https://docs.aws.amazon.com/aws-backup/latest/devguide/metering-and-billing.html
     MinValue: 1
     Default: 7
@@ -97,16 +90,18 @@ Parameters:
   CreateSampleVault:
     Type: String
     Description: >-
-      (1) Within the backup account, vaults are required in the backup and
-      alternate backup regions. For every region containing resources to back
-      up, a vault is required in the backup account (and its vault access
-      policy must allow the backup role in every resource account to
-      "backup:CopyIntoBackupVault" ), as well as in every resource account (to
-      receive original backups). For a scalable solution, all vaults must be
-      encrypted with the same customer-managed multi-region KMS key, and the
-      key policies of the primary and regional replica keys must allow
-      cross-account key usage, usage for AWS Backup, and usage for underlying
-      AWS services (depending on the types of resources that you back up).
+      (1) Within the backup account, vaults are required: in the backup region,
+      the alternate backup region, and every region containing resources that
+      will be backed up. Within resource accounts, vaults are required in every
+      region containing resources that will be backed up. Vault access policies
+      must allow the backup role to "backup:CopyFromBackupVault" and
+      "backup:CopyIntoBackupVault" as appropriate (resource region to resource
+      and backup regions in backup account). For a scalable solution, all
+      vaults must be encrypted with the same customer-managed multi-region KMS
+      key, and the key policies of the primary and regional replica keys must
+      allow cross-account key usage, usage for AWS Backup, and usage for
+      underlying AWS services (depending on the types of resources that will be
+      backed up).
       (2) By default, the sample vaults are encrypted with the AWS-managed
       "aws/backup" KMS key in each account and region, so they can only be
       used to demonstrate backing up unencrypted EFS file systems.
@@ -143,26 +138,11 @@ Parameters:
     Description: >-
       (Not ARN!) The AWS Backup service will assume this role when copying
       backups. A role of the same name is required in each account that
-      contains resources to back up, and also in the backup account. (Roles
-      are acount-wide, not regional.)
+      contains resources to back up. (Roles are acount-wide, not regional.)
       For possible one-time setup steps before using
       "service-role/AWSBackupDefaultServiceRole", see
       https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles
     Default: "service-role/AWSBackupDefaultServiceRole"
-
-  OnlyResourceAccountId:
-    Type: String
-    Description: >-
-      The only account that contains resources to back up. Leave blank if your
-      resources are spread across multiple accounts, in which case less
-      specific (organization-wide) permissions will be used.
-
-  LogsRetainDays:
-    Type: Number
-    Description: >-
-      See retentionInDays in
-      http://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutRetentionPolicy.html
-    Default: 7
 
   LogLevel:
     Type: String
@@ -177,10 +157,43 @@ Parameters:
       - DEBUG
       - NOTSET
 
+  LogRetentionInDays:
+    Type: Number
+    Description: >-
+      See retentionInDays in
+      http://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutRetentionPolicy.html
+    Default: 7
+
+  ErrorQueueMessageRetentionPeriodSecs:
+    Type: Number
+    Description: >-
+      For consistency, and if CloudWatch Logs and SQS allow, set this to
+      LogRetentionInDays * 86400 . See MessageRetentionPeriod in
+      https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SetQueueAttributes.html#API_SetQueueAttributes_RequestParameters
+    Default: 604800
+
+  ErrorQueueAdditionalPolicyStatements:
+    Type: String
+    Description: >-
+      Additional statements for the error queue policy. The least-privilege
+      default is the empty string. For each custom statement, including the
+      first or only one, specify a comma and a JSON object. You could allow
+      access from a central monitoring account, for example. See
+      https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-creating-custom-policies.html
+    Default: ''  # Values might contain double quotation marks!
+
+  UniqueNamePrefix:
+    Type: String
+    Description: >-
+      Change this only if you need to create multiple stacks from the same
+      template, in the same accounts and regions, for example, during a
+      blue/green deployment
+    Default: "BackupEvents"
+
   CloudWatchLogsKmsKey:
     Type: String
     Description: >-
-      If this is blank, function logs receive CloudWatch default non-KMS
+      If this is blank, the function log receives CloudWatch default non-KMS
       encryption.
       To use a customer-managed, multi-region KMS encryption key instead,
       specify "ACCOUNT:key/KEY_ID", where KEY_ID begins with "mrk-". The
@@ -192,8 +205,8 @@ Parameters:
   SqsKmsKey:
     Type: String
     Description: >-
-      If this is blank, EventBridge events sent to the "dead letter" queue
-      receive SQS default non-KMS encryption.
+      If this is blank, messages sent to the error queue receive SQS default
+      non-KMS encryption.
       To use the AWS-managed default KMS key, specify "alias/aws/sqs".
       To use a customer-managed, multi-region KMS key, specify
       "ACCOUNT:key/KEY_ID", where where KEY_ID begins with "mrk-". The
@@ -216,24 +229,16 @@ Parameters:
       https://aws.amazon.com/about-aws/whats-new/2018/10/aws-lambda-supports-functions-that-can-run-up-to-15-minutes/
     Default: 30
 
-  UniqueNamePrefix:
-    Type: String
-    Description: >-
-      Change this only if you need to create multiple stacks from the same
-      template, in the same accounts and regions, for example, during a
-      blue/green deployment.
-    Default: "BackupEvents"
-
   UpdateLifecycleLambdaFnMemoryMB:
     Type: Number
     Description: >-
-      Increase this only in case of out-of-memory errors.
+      Increase this only in case of out-of-memory errors
     Default: 128
 
   UpdateLifecycleLambdaFnTimeoutSecs:
     Type: Number
     Description: >-
-      Increase this only in case of time-out errors.
+      Increase this only in case of time-out errors
     Default: 60
 
 Metadata:
@@ -250,7 +255,6 @@ Metadata:
         Parameters:
           - EnableCopy
           - EnableUpdateLifecycle
-          - OrgId
           - BackupAccountId
           - BackupRegion
           - BackupRegionAlternate
@@ -266,12 +270,14 @@ Metadata:
           - VaultCustomKmsKey
           - VaultName
           - CopyRoleName
-          - OnlyResourceAccountId
 
       - Label: { default: Both AWS Lambda functions... }
         Parameters:
-          - LogsRetainDays
           - LogLevel
+          - LogRetentionInDays
+          - ErrorQueueMessageRetentionPeriodSecs
+          - ErrorQueueAdditionalPolicyStatements
+          - UniqueNamePrefix
           - CloudWatchLogsKmsKey
           - SqsKmsKey
 
@@ -279,7 +285,6 @@ Metadata:
         Parameters:
           - CopyLambdaFnMemoryMB
           - CopyLambdaFnTimeoutSecs
-          - UniqueNamePrefix
 
       - Label: { default: Function to schedule a backup for deletion }
         Parameters:
@@ -299,8 +304,6 @@ Metadata:
         default: Enable copying of backups
       EnableUpdateLifecycle:
         default: Enable backup retention reduction
-      OrgId:
-        default: AWS Organization ID
       BackupAccountId:
         default: Backup AWS account
       BackupRegion:
@@ -321,24 +324,26 @@ Metadata:
         default: Vault name
       CopyRoleName:
         default: IAM role name for copying backups
-      OnlyResourceAccountId:
-        default: Only AWS account with resources to back up
 
-      LogsRetainDays:
-        default: Days before deleting logs
       LogLevel:
-        default: Level of detail in logs
+        default: Level of detail in log
+      LogRetentionInDays:
+        default: Days before deleting log entries
+      ErrorQueueMessageRetentionPeriodSecs:
+        default: Seconds before deleting error queue messages
+      ErrorQueueAdditionalPolicyStatements:
+        default: Additional error queue policy statements
+      UniqueNamePrefix:
+        default: Unique resource name prefix
       CloudWatchLogsKmsKey:
-        default: KMS encryption key for logs
+        default: KMS encryption key for log
       SqsKmsKey:
-        default: KMS encryption key for event errors
+        default: KMS encryption key for error queue
 
       CopyLambdaFnMemoryMB:
         default: Megabytes of memory
       CopyLambdaFnTimeoutSecs:
         default: Seconds before timeout
-      UniqueNamePrefix:
-        default: Unique resource name prefix
 
       UpdateLifecycleLambdaFnMemoryMB:
         default: Megabytes of memory
@@ -356,11 +361,10 @@ Rules:
 
   EnableUpdateLifecycleRequiresEnableCopy:
     Assertions:
-      - Assert:
-          Fn::Not:
-            - Fn::And:
-                - !Equals [ !Ref EnableUpdateLifecycle, "true" ]
-                - !Not [ !Equals [ !Ref EnableCopy, "true" ] ]
+      - Assert: !Not
+          - !And
+            - !Equals [ !Ref EnableUpdateLifecycle, "true" ]
+            - !Not [ !Equals [ !Ref EnableCopy, "true" ] ]
         AssertDescription: >-
           EnableUpdateLifecycle requires EnableCopy.
 
@@ -377,100 +381,113 @@ Conditions:
   CreateSampleVaultTrue: !Equals [ !Ref CreateSampleVault, "true" ]
   VaultCustomKmsKeyNo: !Equals [ !Ref VaultCustomKmsKey, "" ]
 
-  OnlyResourceAccountIdBlank: !Equals [ !Ref OnlyResourceAccountId, "" ]
-
   CloudWatchLogsKmsKeyNo: !Equals [ !Ref CloudWatchLogsKmsKey, "" ]
 
   SqsKmsKeyNo: !Equals [ !Ref SqsKmsKey, "" ]
-  SqsKmsKeyCustom:
-    Fn::And:
-      - !Not [ !Condition SqsKmsKeyNo ]
-      - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
+  SqsKmsKeyCustom: !And
+    - !Not [ !Condition SqsKmsKeyNo ]
+    - !Not [ !Equals [ !Ref SqsKmsKey, "alias/aws/sqs" ] ]
 
 Resources:
+
+  ErrorQueuePol:
+    Type: AWS::SQS::QueuePolicy
+    Condition: NotInBackupAccount
+    Properties:
+      Queues: [ !Ref ErrorQueue ]
+      # Using YAML makes a policy easier to read, but we need to support
+      # insertion of custom JSON from ErrorQueueAdditionalPolicyStatements .
+      PolicyDocument: !Sub
+        - >-
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "RequireTls",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "sqs:*",
+                "Resource": "*",
+                "Condition": {
+                  "Bool": {
+                    "aws:SecureTransport": "false"
+                  }
+                }
+              },
+              {
+                "Sid": "${SourceEventRulesSid}",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "events.amazonaws.com"
+                },
+                "Action": "sqs:SendMessage",
+                "Resource": "*",
+                "Condition": {
+                  "ArnEquals": {
+                    "aws:SourceArn": [
+                      "${BackupCompletedCopyLambdaFnEvRule.Arn}",
+                      "${Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
+                      "${BackupFailedSqsErrorQueueEvRule.Arn}",
+                      "${CopyFailedSqsErrorQueueEvRule.Arn}"
+                    ]
+                  }
+                }
+              },
+              {
+                "Sid": "${SourceLambdaFnsSid}",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "sqs:SendMessage",
+                "Resource": "*",
+                "Condition": {
+                  "ArnEquals": {
+                    "aws:PrincipalArn": [
+                      "${CopyLambdaFnRole.Arn}",
+                      "${UpdateLifecycleLambdaFnRole.Arn}"
+                    ]
+                  }
+                }
+              },
+              {
+                "Sid": "ExclusiveSources",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "sqs:SendMessage",
+                "Resource": "*",
+                "Condition": {
+                  "ArnNotEquals": {
+                    "aws:SourceArn": [
+                      "${BackupCompletedCopyLambdaFnEvRule.Arn}",
+                      "${Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
+                      "${BackupFailedSqsErrorQueueEvRule.Arn}",
+                      "${CopyFailedSqsErrorQueueEvRule.Arn}"
+                    ],
+                    "aws:PrincipalArn": [
+                      "${CopyLambdaFnRole.Arn}",
+                      "${UpdateLifecycleLambdaFnRole.Arn}"
+                    ]
+                  }
+                }
+              }
+              ${ErrorQueueAdditionalPolicyStatements}
+            ]
+          }
+        -
+          SourceEventRulesSid: !If
+            - SqsKmsKeyCustom
+            - SourceEventRulesNoteKeyPolicyNeedsEventBridgeSqsKmsEncrypt
+            - SourceEventRules
+          SourceLambdaFnsSid: !If
+            - SqsKmsKeyCustom
+            - SourceLambdaFnsNoteRoleNeedsSqsKmsDecrypt
+            - SourceLambdaFns
 
   # Administrator: Restrict iam:PassRole to prevent arbitrary use of these
   # roles
 
-  InvokeCopyLambdaFnInBackupAcctRole:
-    Type: AWS::IAM::Role
-    Condition: NotInBackupAccount
-    Properties:
-      # Cross-account:
-      RoleName: !Sub "${UniqueNamePrefix}-InvokeCopyLambdaFnInBackupAcctRole-${AWS::Region}"
-
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal: { Service: events.amazonaws.com }
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                "aws:ResourceOrgID": !Ref OrgId
-              ArnLike:
-                "aws:SourceArn":
-                  !Sub "arn:aws:events:${AWS::Region}:*:rule/${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
-                  # Confused deputy prevention; fixed rule name avoids
-                  # circular dependency
-      Policies:
-        - PolicyName: LambdaInvoke
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: lambda:InvokeFunction
-                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
-                Condition:
-                  StringEquals:
-                    "aws:ResourceOrgID": !Ref OrgId
-
-  EventTargetErrorQueuePol:
-    Type: AWS::SQS::QueuePolicy
-    Condition: NotInBackupAccount
-    Properties:
-      Queues: [ !Ref EventTargetErrorQueue ]
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: RequireTls
-            Effect: Deny
-            Principal: "*"
-            Action: sqs:*
-            Resource: "*"
-            Condition:
-              Bool: { "aws:SecureTransport": "false" }
-          - Effect: Allow
-            Principal: "*"
-            Action: sqs:GetQueueAttributes
-            Resource: "*"
-            Condition:
-              StringEquals: { "aws:PrincipalOrgId": !Ref OrgId }
-          - Sid: DeadLetterSource
-            Effect: Allow
-            Principal: "*"
-            Action: sqs:SendMessage
-            Resource: "*"
-            Condition:
-              ArnEquals:
-                "aws:SourceArn":
-                  - !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
-                  - !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
-                  - !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn
-          - Sid: ExclusiveSource
-            Effect: Deny
-            Principal: "*"
-            Action: sqs:SendMessage
-            Resource: "*"
-            Condition:
-              ArnNotEquals:
-                "aws:SourceArn":
-                  - !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
-                  - !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
-                  - !GetAtt Copy1ToBackupAcctCompletedCopyLambdaFnEvRule.Arn
-
   CopyLambdaFnRole:
     Type: AWS::IAM::Role
+    Condition: NotInBackupAccount
     Properties:
       Description: !Sub "For ${AWS::Region} region"
       # Conspicuous in the AWS Console. Prefer CloudFormation naming and one
@@ -494,7 +511,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
-                Resource: !GetAtt CopyLambdaFnLogGrp.Arn
+                Resource: !GetAtt LambdaFnLogGrp.Arn
         - PolicyName: CloudWatchLogsWrite
           PolicyDocument:
             Version: "2012-10-17"
@@ -503,9 +520,14 @@ Resources:
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${CopyLambdaFnLogGrp}:log-stream:*"
-                # !GetAtt LogGroup.Arn ends with :* instead of allowing us to
-                # append :log-stream:* to make a log stream ARN
+                # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html#amazoncloudwatchlogs-resources-for-iam-policies
+                # Warning: Transforming a log-group ARN to a log-stream ARN
+                # this way works if the only wildcard comes at the end.
+                Resource: !Sub
+                  - "${LogGroupArnBase}:log-stream:*"
+                  - LogGroupArnBase: !Select
+                      - 0
+                      - !Split [ ":*", !GetAtt LambdaFnLogGrp.Arn ]
 
         - PolicyName: BackupCopy
           PolicyDocument:
@@ -517,10 +539,10 @@ Resources:
                 Condition:
                   StringEquals:
                     "aws:ResourceAccount": !Ref AWS::AccountId
-                    # This ia a global ("aws:"), not AWS Backup ("backup:")
+                    # This is a global ("aws:"), not AWS Backup ("backup:")
                     # condition key. "Resource" refers to the original backup
-                    # or the 1st copy, not to the "protected resource" (that
-                    # is, not to the resource that was backed up).
+                    # or to a copy, not to the "protected resource" (that is,
+                    # not to the resource that was backed up).
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
@@ -531,7 +553,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: NotInBackupAccount
     Properties:
-      Description: !Sub "For ${AWS::Region} region"  # Conspicuous Console
+      Description: !Sub "For ${AWS::Region} region"  # Conspicuous in Console
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -547,7 +569,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
-                Resource: !GetAtt UpdateLifecycleLambdaFnLogGrp.Arn
+                Resource: !GetAtt LambdaFnLogGrp.Arn
         - PolicyName: CloudWatchLogsWrite
           PolicyDocument:
             Version: "2012-10-17"
@@ -556,9 +578,14 @@ Resources:
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${UpdateLifecycleLambdaFnLogGrp}:log-stream:*"
-                # !GetAtt LogGroup.Arn ends with :* instead of allowing us to
-                # append :log-stream:* to make a log stream ARN
+                # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html#amazoncloudwatchlogs-resources-for-iam-policies
+                # Warning: Transforming a log-group ARN to a log-stream ARN
+                # this way works if the only wildcard comes at the end.
+                Resource: !Sub
+                  - "${LogGroupArnBase}:log-stream:*"
+                  - LogGroupArnBase: !Select
+                      - 0
+                      - !Split [ ":*", !GetAtt LambdaFnLogGrp.Arn ]
 
         - PolicyName: BackupRead
           PolicyDocument:
@@ -594,167 +621,256 @@ Resources:
     Condition: CreateSampleVaultTrue
     Properties:
       BackupVaultName: !Ref VaultName
-      EncryptionKeyArn:
-        Fn::If:
-          - VaultCustomKmsKeyNo
-          - !Ref AWS::NoValue
-          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${VaultCustomKmsKey}"
+      EncryptionKeyArn: !If
+        - VaultCustomKmsKeyNo
+        - !Ref AWS::NoValue
+        - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${VaultCustomKmsKey}"
       BackupVaultTags:
-        Note:
-          Fn::If:
-            - VaultCustomKmsKeyNo
-            - Fn::If:
-                - InBackupAccount
-                - Fn::If:
-                    - InBackupRegion
-                    - >-
-                        Only for copies of copies of EFS backups.
-                        Prior copy: same account and other region and
-                        encrypted with the AWS-managed default aws/backup key
-                        for that region.
-                        This copy: encrypted with the aws/backup key for this
-                        region.
-                    - >-
-                        Only for copies of EFS backups.
-                        Original backup: other account and same region and
-                        unencrypted.
-                        This copy: encrypted with the AWS-managed default
-                        aws/backup key for this account and this region.
-                - >-
-                    Only for backups of unencrypted EFS file systems.
-                    File system: same account and region and unencrypted.
-                    This backup: encrypted with the aws/backup key for this
-                    region.
-            - !Ref AWS::NoValue
-      AccessPolicy:
-        Version: "2012-10-17"
-        Statement:
-
-          - Fn::If:
-              - InBackupAccount
-              - Sid: CopyIntoBackupVaultAllowServiceRole
-                Effect: Allow
-                Principal: "*"
-                Condition:
-                  StringEquals:
-                    "aws:PrincipalOrgId": !Ref OrgId
-                  ArnLike:
-                    "aws:PrincipalArn": !Sub "arn:aws:iam::*:role/${CopyRoleName}"
-                Action: backup:CopyIntoBackupVault
-                Resource: "*"
-              - !Ref AWS::NoValue
-
-          - Sid: CopyFromBackupVaultExclusiveCopyTarget
-            Effect: Deny
-            Principal: "*"
-            Action: backup:CopyFromBackupVault
-            Resource: "*"
-            Condition:
-              "ForAllValues:ArnNotEquals":
-                "backup:CopyTargets":
-                  # See also VaultARN and VAULT_ARN
-                  - Fn::If:
-                      - InBackupAccount
-                      - Fn::If:
+        Note: !If
+          - VaultCustomKmsKeyNo
+          - !If
+            - InBackupAccount
+            - !If
+              - InBackupRegion
+              - >-
+                  Only for copies of EFS backups.
+                  Original backup: other account and other region and
+                  unencrypted.
+                  This copy: encrypted with the aws/backup key for this
+                  account and this region.
+              - >-
+                  Only for copies of EFS backups.
+                  Original backup: other account and same region and
+                  unencrypted.
+                  This copy: encrypted with the aws/backup key for this
+                  account and this region.
+            - >-
+                Only for backups of unencrypted EFS file systems.
+                File system: same account and same region and unencrypted.
+                This backup: encrypted with the aws/backup key for this
+                account and this region.
+          - !Ref AWS::NoValue
+      AccessPolicy: !If
+        - InBackupAccount
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: CopyIntoBackupVaultAllowServiceRole
+              Effect: Allow
+              Principal: "*"
+              Condition:
+                StringEquals:
+                  "aws:PrincipalOrgId": "${aws:ResourceOrgID}"
+                ArnLike:
+                  "aws:PrincipalArn": !Sub "arn:aws:iam::*:role/${CopyRoleName}"
+              Action: backup:CopyIntoBackupVault
+              Resource: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: CopyWithinOrganizationOnly
+              Effect: Deny
+              Principal: "*"
+              Action: backup:CopyFromBackupVault
+              Resource: "*"
+              Condition:
+                "ForAllValues:StringNotLike":
+                  "backup:CopyTargetOrgPaths": "${aws:ResourceOrgID}/*"
+            - Sid: CopyOnlyToSameVaultInBackupOrResourceRegionInBackupAccount
+              Effect: Deny
+              Principal: "*"
+              Action: backup:CopyFromBackupVault
+              Resource: "*"
+              Condition:
+                "ForAllValues:ArnNotLike":
+                  "backup:CopyTargets":
+                    # See also destination_vault_arn
+                    - !Sub
+                      - "arn:${AWS::Partition}:backup:${DestinationRegion}:${BackupAccountId}:backup-vault:${VaultName}"
+                      - DestinationRegion: !If
                           - InBackupRegion
-                          - !Sub "arn:${AWS::Partition}:backup:${BackupRegionAlternate}:${AWS::AccountId}:backup-vault:${VaultName}"
-                          - !Sub "arn:${AWS::Partition}:backup:${BackupRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
-                      - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
+                          - !Ref BackupRegionAlternate
+                          - !Ref BackupRegion
+                    - !Sub
+                      - "arn:${AWS::Partition}:backup:${DestinationRegion}:${BackupAccountId}:backup-vault:${VaultName}"
+                      - DestinationRegion: !Ref AWS::Region
 
-  EventTargetErrorQueue:
+  ErrorQueue:
     Type: AWS::SQS::Queue
     Condition: NotInBackupAccount
     Properties:
+      # Fixed name accommodates potential polling from a central account
+      QueueName: !Sub "${UniqueNamePrefix}-ErrorQueue"
+
       DelaySeconds: 0
-      MessageRetentionPeriod: 604800  # seconds (7 days)
+      MessageRetentionPeriod: !Ref ErrorQueueMessageRetentionPeriodSecs
       ReceiveMessageWaitTimeSeconds: 20  # long polling (lowest cost)
       VisibilityTimeout: 60  # seconds
       SqsManagedSseEnabled: !If [ SqsKmsKeyNo, true, false ]
-      KmsMasterKeyId:
-        Fn::If:
-          - SqsKmsKeyNo
-          - !Ref AWS::NoValue
-          - Fn::If:
-              - SqsKmsKeyCustom
-              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${SqsKmsKey}"
-              - !Ref SqsKmsKey
-      KmsDataKeyReusePeriodSeconds:
-        Fn::If:
-          - SqsKmsKeyNo
-          - !Ref AWS::NoValue
-          - 86400  # seconds (24 hours)
+      KmsMasterKeyId: !If
+        - SqsKmsKeyNo
+        - !Ref AWS::NoValue
+        - !If
+          - SqsKmsKeyCustom
+          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${SqsKmsKey}"
+          - !Ref SqsKmsKey
+      KmsDataKeyReusePeriodSeconds: !If
+        - SqsKmsKeyNo
+        - !Ref AWS::NoValue
+        - 86400  # seconds (24 hours)
 
-  CopyLambdaFnLogGrp:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      RetentionInDays: !Ref LogsRetainDays
-      KmsKeyId:
-        Fn::If:
-          - CloudWatchLogsKmsKeyNo
-          - !Ref AWS::NoValue
-          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
-
-  UpdateLifecycleLambdaFnLogGrp:
+  LambdaFnLogGrp:
     Type: AWS::Logs::LogGroup
     Condition: NotInBackupAccount
     Properties:
-      RetentionInDays: !Ref LogsRetainDays
-      KmsKeyId:
-        Fn::If:
-          - CloudWatchLogsKmsKeyNo
-          - !Ref AWS::NoValue
-          - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
+      RetentionInDays: !Ref LogRetentionInDays
+      KmsKeyId: !If
+        - CloudWatchLogsKmsKeyNo
+        - !Ref AWS::NoValue
+        - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
 
   BackupCompletedCopyLambdaFnEvRule:
     Type: AWS::Events::Rule
     Condition: NotInBackupAccount
     Properties:
       Description: >-
-        After backup has been created, store 1st (same-region) copy in
-        backup account
+        After on-demand backup has been created,
+        copy to backup account (backup region and resource region)
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Backup Job State Change ]
+        version: [ "0" ]
         detail:
           state: [ COMPLETED ]
           backupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
-        version: [ "0" ]
+          createdBy:
+            backupPlanArn: [ { exists: false } ]
       Targets:
-        - Id: !Ref CopyLambdaFn
+
+        - Id: CopyToBackupAccountBackupRegion
+          InputTransformer:
+            InputTemplate: !Sub
+              - |
+                  {
+                    "originalEvent" : <aws.events.event.json>,
+                    "destinationRegion" : "${DestinationRegion}"
+                  }
+              - DestinationRegion: !If
+                  - InBackupRegion
+                  - !Ref BackupRegionAlternate
+                  - !Ref BackupRegion
           Arn: !GetAtt CopyLambdaFn.Arn
-          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 36000  # 10 hours
+          DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
+
+        - Id: CopyToBackupAccountOriginalRegion
+          InputTransformer:
+            InputTemplate: !Sub |
+              {
+                "originalEvent" : <aws.events.event.json>,
+                "destinationRegion" : "${AWS::Region}"
+              }
+          Arn: !GetAtt CopyLambdaFn.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 36000  # 10 hours
+          DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
+
       State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
 
-  Copy1ToBackupAcctCompletedCopyLambdaFnEvRule:
+  BackupFailedSqsErrorQueueEvRule:
     Type: AWS::Events::Rule
     Condition: NotInBackupAccount
     Properties:
-      # Cross-account; fixed name also avoids circular dependency for confused
-      # deputy prevention
-      Name: !Sub "${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
-
       Description: >-
-        After 1st (same-region) copy of backup has been stored in backup
-        account, store another copy in a 2nd region
+        If on-demand backup fails, log to error queue
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Backup Job State Change ]
+        version: [ "0" ]
+        detail:
+          state: [ FAILED ]
+          backupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+          createdBy:
+            backupPlanArn: [ { exists: false } ]
+      Targets:
+        - Id: SendToErrorQueue
+          Arn: !GetAtt ErrorQueue.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 1800  # 30 minutes
+      State: ENABLED
+
+  Copy1CompletedUpdateLifecycleLambdaFnEvRule:
+    Type: AWS::Events::Rule
+    Condition: NotInBackupAccount
+    Properties:
+      Description: >-
+        After 1st (backup region) copy of on-demand backup has been stored in
+        backup account, schedule deletion of original backup
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Copy Job State Change ]
+        version: [ "0" ]
         detail:
           state: [ COMPLETED ]
           sourceBackupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
           destinationBackupVaultArn:
-            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
-        version: [ "0" ]
+            - !Sub
+              - "arn:${AWS::Partition}:backup:${DestinationRegion}:${BackupAccountId}:backup-vault:${VaultName}"
+              - DestinationRegion: !If
+                  - InBackupRegion
+                  - !Ref BackupRegionAlternate
+                  - !Ref BackupRegion
+          createdBy:
+            backupPlanArn: [ { exists: false } ]
       Targets:
-        - Id: !Sub "${UniqueNamePrefix}-CopyLambdaFn"
-          RoleArn: !GetAtt InvokeCopyLambdaFnInBackupAcctRole.Arn
-          Arn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${BackupAccountId}:function:${UniqueNamePrefix}-CopyLambdaFn"
-          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
-      State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
+        - Id: UpdateOriginalBackupLifecycle
+          InputTransformer:
+            InputTemplate: !Sub |
+              {
+                "originalEvent" : <aws.events.event.json>,
+                "newDeleteAfterDays" : "${NewDeleteAfterDays}"
+              }
+          Arn: !GetAtt UpdateLifecycleLambdaFn.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 36000  # 10 hours
+          DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
+      State: !If [ EnableUpdateLifecycleTrue, ENABLED, DISABLED ]
+
+  CopyFailedSqsErrorQueueEvRule:
+    Type: AWS::Events::Rule
+    Condition: NotInBackupAccount
+    Properties:
+      Description: >-
+        If copying on-demand backup to backup account fails, log to error queue
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Copy Job State Change ]
+        version: [ "0" ]
+        detail:
+          state: [ FAILED ]
+          sourceBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+          destinationBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
+            - !Sub
+              - "arn:${AWS::Partition}:backup:${DestinationRegion}:${BackupAccountId}:backup-vault:${VaultName}"
+              - DestinationRegion: !If
+                  - InBackupRegion
+                  - !Ref BackupRegionAlternate
+                  - !Ref BackupRegion
+          createdBy:
+            backupPlanArn: [ { exists: false } ]
+      Targets:
+        - Id: SendToErrorQueue
+          Arn: !GetAtt ErrorQueue.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 1800  # 30 minutes
+      State: ENABLED
 
   # Administrator: Block other invocations
+
   BackupCompletedCopyLambdaFnEvRulePerm:
     Type: AWS::Lambda::Permission
     Condition: NotInBackupAccount
@@ -764,54 +880,6 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref CopyLambdaFn
 
-  Copy1ToBackupAcctCompletedCopyLambdaFnEvRulePerm:
-    Type: AWS::Lambda::Permission
-    Condition: InBackupAccount
-    Properties:
-      # AWS Lambda does not allow direct editing of a Lambda function's
-      # resource access policy. The available AddPermission API does not
-      # accept the * wildcard in the AccountId position of ARNs. Therefore,
-      # unless we're expecting backups from only one account, we must allow
-      # any Principal in the organization, against any SouceArn .
-      # Administrator: Consider restricting by service control policy (SCP).
-      SourceArn:
-        Fn::If:
-          - OnlyResourceAccountIdBlank
-          - !Ref AWS::NoValue
-          - !Sub "arn:aws:events:${AWS::Region}:${OnlyResourceAccountId}:rule/${UniqueNamePrefix}-Copy1ToBackupAcctCompletedCopyLambdaFnEvRule"
-      PrincipalOrgID: !Ref OrgId
-      Principal:
-        Fn::If:
-          - OnlyResourceAccountIdBlank
-          - "*"
-          - !Sub "arn:aws:iam::${OnlyResourceAccountId}:role/${UniqueNamePrefix}-InvokeCopyLambdaFnInBackupAcctRole-${AWS::Region}"
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref CopyLambdaFn
-
-  Copy1CompletedUpdateLifecycleLambdaFnEvRule:
-    Type: AWS::Events::Rule
-    Condition: NotInBackupAccount
-    Properties:
-      Description: >-
-        After 1st (same-region) copy has been stored in backup account,
-        schedule deletion of original backup
-      EventPattern:
-        source: [ aws.backup ]
-        detail-type: [ Copy Job State Change ]
-        detail:
-          state: [ COMPLETED ]
-          sourceBackupVaultArn:
-            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
-          destinationBackupVaultArn:
-            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
-        version: [ "0" ]
-      Targets:
-        - Id: !Ref UpdateLifecycleLambdaFn
-          Arn: !GetAtt UpdateLifecycleLambdaFn.Arn
-          DeadLetterConfig: { Arn: !GetAtt EventTargetErrorQueue.Arn }
-      State: !If [ EnableUpdateLifecycleTrue, ENABLED, DISABLED ]
-
-  # Administrator: Block other invocations
   UpdateLifecycleLambdaFnPerm:
     Type: AWS::Lambda::Permission
     Condition: NotInBackupAccount
@@ -821,19 +889,39 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref UpdateLifecycleLambdaFn
 
+  CopyLambdaFnEvInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Condition: NotInBackupAccount
+    DependsOn: ErrorQueuePol
+    Properties:
+      FunctionName: !Ref CopyLambdaFn
+      Qualifier: "$LATEST"
+      MaximumEventAgeInSeconds: 21600  # 6 hours (Lambda async. maximum)
+      MaximumRetryAttempts: 2  # (Lambda async. maximum)
+      DestinationConfig:
+        OnFailure: { Destination: !GetAtt ErrorQueue.Arn }
+
+  UpdateLifecycleLambdaFnLambdaFnEvInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Condition: NotInBackupAccount
+    DependsOn: ErrorQueuePol
+    Properties:
+      FunctionName: !Ref UpdateLifecycleLambdaFn
+      Qualifier: "$LATEST"
+      MaximumRetryAttempts: 2  # (Lambda async. maximum)
+      MaximumEventAgeInSeconds: 21600  # (Lambda async. maximum)
+      DestinationConfig:
+        OnFailure: { Destination: !GetAtt ErrorQueue.Arn }
+
   CopyLambdaFn:
     Type: AWS::Lambda::Function
+    Condition: NotInBackupAccount
     Properties:
-      FunctionName:
-        Fn::If:
-          - InBackupAccount
-          - !Sub "${UniqueNamePrefix}-CopyLambdaFn"  # Cross-account
-          - !Ref AWS::NoValue  # Same-account, prefer CloudFormation naming
       Role: !GetAtt CopyLambdaFnRole.Arn
       Timeout: !Ref CopyLambdaFnTimeoutSecs
       MemorySize: !Ref CopyLambdaFnMemoryMB
       LoggingConfig:
-        LogGroup: !Ref CopyLambdaFnLogGrp
+        LogGroup: !Ref LambdaFnLogGrp
         LogFormat: JSON
         SystemLogLevel: WARN
         ApplicationLogLevel: !Ref LogLevel
@@ -845,18 +933,10 @@ Resources:
       # S3), supply shared, multi-handler source code in-line...
       Environment:
         Variables:
-          NEW_DELETE_AFTER_DAYS: "0"  # Not needed by this handler
+          VAULT_NAME: !Ref VaultName
           COPY_ROLE_ARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CopyRoleName}"
-          BACKUP_VAULT_NAME: !Ref VaultName
-          DESTINATION_BACKUP_VAULT_ARN:
-            # See also VaultARN and backup:CopyTargets
-            Fn::If:
-              - InBackupAccount
-              - Fn::If:
-                  - InBackupRegion
-                  - !Sub "arn:${AWS::Partition}:backup:${BackupRegionAlternate}:${AWS::AccountId}:backup-vault:${VaultName}"
-                  - !Sub "arn:${AWS::Partition}:backup:${BackupRegion}:${AWS::AccountId}:backup-vault:${VaultName}"
-              - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
+          AWS_PARTITION: !Ref AWS::Partition
+          BACKUP_ACCOUNT_ID: !Ref BackupAccountId
       Handler: index.lambda_handler_copy
       Code:
         ZipFile: |
@@ -882,21 +962,10 @@ Resources:
           time.tzset()
           # See get_update_lifecycle_kwargs and lambda_handler_update_lifecycle
 
-          NEW_DELETE_AFTER_DAYS = int(os.environ["NEW_DELETE_AFTER_DAYS"])
-
-
-          def get_backup_action_kwargs_base():
-            """Get base kwargs for AWS Backup methods, from environment variables
-            """
-            backup_vault_name = os.environ["BACKUP_VAULT_NAME"]
-            return {
-              "DEFAULT": {"BackupVaultName": backup_vault_name},
-              "start_copy_job": {
-                "IamRoleArn": os.environ["COPY_ROLE_ARN"],
-                "SourceBackupVaultName": backup_vault_name,
-                "DestinationBackupVaultArn": os.environ["DESTINATION_BACKUP_VAULT_ARN"],
-              },
-            }
+          VAULT_NAME = os.environ["VAULT_NAME"]
+          COPY_ROLE_ARN = os.environ.get("COPY_ROLE_ARN", "")
+          AWS_PARTITION = os.environ.get("AWS_PARTITION", "")
+          BACKUP_ACCOUNT_ID = os.environ.get("BACKUP_ACCOUNT_ID", "")
 
 
           def log(entry_type, entry_value, log_level=logging.INFO):
@@ -904,58 +973,37 @@ Resources:
             """
             entry_value_out = json.loads(json.dumps(entry_value, default=str))
             # Avoids "Object of type datetime is not JSON serializable" in
-            # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/9efb462/awslambdaric/lambda_runtime_log_utils.py#L109-L135
+            # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/2e3d4b4/awslambdaric/lambda_runtime_log_utils.py#L110-L139
             #
             # The JSON encoder in the AWS Lambda Python runtime isn't configured to
             # serialize datatime values in responses returned by AWS's own Python SDK!
             #
             # Alternative considered:
-            # https://docs.powertools.aws.dev/lambda/python/latest/core/logger/
+            # https://docs.powertools.aws.dev/lambda/python/latest/core/logger
 
             logger.log(
               log_level, "", extra={"type": entry_type, "value": entry_value_out}
             )
 
 
-          def boto3_success(resp):
-            """Take a boto3 response, return True if result was success
-
-            Success means an AWS operation has started, not necessarily that it has
-            completed. For example, it may take hours to copy a backup.
-            """
-            return (
-              isinstance(resp, dict)
-              and isinstance(resp.get("ResponseMetadata"), dict)
-              and (resp["ResponseMetadata"].get("HTTPStatusCode") == 200)
-            )
-
-
           class Backup():
             """AWS Backup recovery point
-
-            If the object is not also a subclass, then the recovery point is the
-            original, from start_backup_job :
-            https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
             """
-            _boto3_client = None
-            action_kwargs_base = get_backup_action_kwargs_base()
-
-            _from_job_id_key = "backupJobId"
 
             def __init__(self, from_event):
               self._from_event = from_event
 
-            @staticmethod
-            def new(from_event):
-              """Create a Backup or BackupCopy instance
+            _action_kwargs_base = {
+              "start_copy_job": {
+                "SourceBackupVaultName": VAULT_NAME,
+                "IamRoleArn": COPY_ROLE_ARN,
+              },
+              "DEFAULT": {
+                "BackupVaultName": VAULT_NAME,
+              },
+            }
 
-              Takes a start_backup_job or start_copy_job state change COMPLETED event
-              (EventBridge filters in CloudFormation allow only acceptable events)
-              """
-              new_object_class = (
-                BackupCopy if from_event["detail-type"].startswith("Copy ") else Backup
-              )
-              return new_object_class(from_event)
+            _boto3_client = None
 
             @classmethod
             def get_boto3_client(cls):
@@ -975,104 +1023,124 @@ Resources:
                 )
               return cls._boto3_client
 
-            # pylint: disable=missing-function-docstring
-
             @property
-            def _from_job_details(self):
-              return self._from_event.get("detail", {})
-
-            @property
-            def from_event(self):
+            def from_event(self):  # pylint: disable=missing-function-docstring
               return self._from_event
 
             @property
-            def from_job_id(self):
-              return self._from_job_details.get(self._from_job_id_key, "")
+            def arn(self):  # pylint: disable=missing-function-docstring
+              return self._from_event.get("originalEvent", {}).get("resources", [""])[0]
 
-            @property
-            def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-              return ""
-
-            @property
-            def arn(self):
-              return self._from_event.get("resources", [""])[0]
-
-            # pylint: enable=missing-function-docstring
-
-            def valid(self):
+            def validate(self):
               """Return True if all required attributes are non-empty
 
               A cursory validation, but EventBridge filters in CloudFormation allow only
               acceptable events, which come from AWS Backup.
               """
-              return all([self.from_job_id, self.arn])  # More attributes coming!
+              if not bool(self.arn):
+                raise ValueError("Could not find recoveryPoint ARN in event input")
 
-            def log_action(self, action_name, action_kwargs, exception=None, resp=None):
+            def log_action(self, action_name, action_kwargs, result):
               """Log the AWS Lambda event and the outcome of an action on a backup
               """
-              log_level = logging.INFO if boto3_success(resp) else logging.ERROR
+              if isinstance(result, Exception):
+                log_level = logging.ERROR
+                entry_type = "EXCEPTION"
+              else:
+                log_level = logging.INFO
+                entry_type = "AWS_RESPONSE"
 
               log("LAMBDA_EVENT", self.from_event, log_level)
               log(f"{action_name.upper()}_KWARGS", action_kwargs, log_level)
-
-              if exception is not None:
-                log("EXCEPTION", exception, log_level)
-              elif resp is not None:
-                log("AWS_RESPONSE", resp, log_level)
+              log(entry_type, result, log_level)
 
             def do_action(
               self, action_name, kwargs_add={}, validate_backup=True
             ):  # pylint: disable=dangerous-default-value
               """Take an AWS Backup method and kwargs, log outcome, and return response
               """
-              action_kwargs = self.action_kwargs_base.get(
-                action_name, self.action_kwargs_base["DEFAULT"]
-              ) | kwargs_add  # Copy, don't update!
-              resp = None
+              action_kwargs = self._action_kwargs_base.get(
+                action_name, self._action_kwargs_base["DEFAULT"]
+              ) | {"RecoveryPointArn": self.arn} | kwargs_add  # Copy, don't update!
+              result = None
 
-              if validate_backup and not self.valid():
-                self.log_action(action_name, action_kwargs)
-              else:
+              try:
+                if validate_backup:
+                  self.validate()
                 action_method = getattr(self.get_boto3_client(), action_name)
-                try:
-                  resp = action_method(**action_kwargs)
-                except Exception as misc_exception:
-                  self.log_action(action_name, action_kwargs, exception=misc_exception)
-                  raise
-                self.log_action(action_name, action_kwargs, resp=resp)
+                result = action_method(**action_kwargs)
+              except Exception as misc_exception:  # pylint: disable=broad-exception-caught
+                result = misc_exception
+              self.log_action(action_name, action_kwargs, result)
+              if isinstance(result, Exception):
+                raise result
 
-              return resp
+              return result
 
 
-          class BackupCopy(Backup):
-            """AWS Backup recovery point copy, from start_copy_job
+          class BackupJobResult(Backup):
+            """AWS Backup recovery point - start_backup_job result
+
+            https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
+            """
+
+            def __init__(self, from_event):
+              super().__init__(from_event)
+              self._destination_region = self.from_event.get("destinationRegion", "")
+              self._destination_vault_arn = ":".join([
+                "arn",
+                AWS_PARTITION,
+                "backup",
+                self._destination_region,
+                BACKUP_ACCOUNT_ID,
+                "backup-vault",
+                VAULT_NAME
+              ])
+
+            @property
+            def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
+              return self._destination_vault_arn
+
+            def validate(self):
+              super().validate()
+              if not bool(self._destination_region):
+                raise ValueError("Could not find destination region in event input")
+
+
+          class CopyJobSource(Backup):
+            """AWS Backup recovery point copy - start_copy_job source
 
             https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#copy-job-state-change-completed
-
-            Why didn't AWS use the same structure and keys for start_backup_job and the
-            destination half of start_copy_job ? Both methods put a backup into a
-            destination vault!
             """
-            _from_job_id_key = "copyJobId"
+
+            def __init__(self, from_event):
+              super().__init__(from_event)
+              self._new_delete_after_days_str = self.from_event.get(
+                "newDeleteAfterDays", ""
+              )
 
             @property
-            def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-              return self._from_event.get("resources", [""])[0]
+            def new_delete_after_days(self):  # pylint: disable=missing-function-docstring
+              return int(self._new_delete_after_days_str)
 
-            @property
-            def arn(self):  # pylint: disable=missing-function-docstring
-              return self._from_job_details.get("destinationRecoveryPointArn", "")
+            def validate(self):
+              super().validate()
+              try:
+                self.new_delete_after_days
+              except ValueError as value_err_exception:
+                raise ValueError(
+                  "Could not find newDeleteAfterDays in event input, "
+                  "or could not convert string to integer."
+                ) from value_err_exception
+              if self.new_delete_after_days < 1:
+                raise ValueError(
+                  "newDeleteAfterDays must be greater than or equal to 1."
+                )
 
-            def valid(self):
-              """Return True if all required attributes are non-empty
 
-              A cursory validation, but EventBridge filters in CloudFormation allow only
-              acceptable events, which come from AWS Backup.
-              """
-              return all([self.from_job_id, self.from_backup_arn, self.arn])
-
-
-          def get_update_lifecycle_kwargs(describe_resp, today_date):
+          def get_update_lifecycle_kwargs(
+            describe_resp, today_date, new_delete_after_days
+          ):
             """Take a describe response, return update_recovery_point_lifecycle kwargs
 
             Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -1095,7 +1163,7 @@ Resources:
             creation_date = describe_resp["CreationDate"].date()
             days_old = (today_date - creation_date).days + 1
 
-            delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
+            delete_after_days_minima = [days_old, 1, new_delete_after_days]
             delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
 
             storage_class = describe_resp.get("StorageClass")
@@ -1134,14 +1202,14 @@ Resources:
 
 
           def lambda_handler_copy(event, context):  # pylint: disable=unused-argument
-            """Copy a backup to a vault in another AWS account OR another region
+            """Copy a backup to a vault in another region and/or AWS account
             """
-            backup = Backup.new(event)
+            backup = BackupJobResult(event)
             backup.do_action(
               "start_copy_job",
               {
-                "RecoveryPointArn": backup.arn,
-                "IdempotencyToken": backup.from_job_id,
+                "DestinationBackupVaultArn": backup.destination_vault_arn,
+                "IdempotencyToken": f"{backup.arn}-{backup.destination_vault_arn}",
               }
             )
 
@@ -1153,19 +1221,17 @@ Resources:
             - Before calling describe_recovery_point , use tzset to set the local time
               zone to UTC, for correct results.
             """
-            backup = Backup.new(event)
-            kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
-            describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
-            if boto3_success(describe_resp):
-              kwargs_lifecycle = get_update_lifecycle_kwargs(
-                describe_resp, datetime.date.today()
+            backup = CopyJobSource(event)
+            describe_resp = backup.do_action("describe_recovery_point")
+            kwargs_lifecycle = get_update_lifecycle_kwargs(
+              describe_resp, datetime.date.today(), backup.new_delete_after_days
+            )
+            if kwargs_lifecycle:
+              backup.do_action(
+                "update_recovery_point_lifecycle",
+                kwargs_lifecycle,
+                validate_backup=False
               )
-              if kwargs_lifecycle:
-                backup.do_action(
-                  "update_recovery_point_lifecycle",
-                  kwargs_lifecycle | kwargs_operand,
-                  validate_backup=False
-                )
         # ZIPFILE_END
 
   UpdateLifecycleLambdaFn:
@@ -1176,7 +1242,7 @@ Resources:
       Timeout: !Ref UpdateLifecycleLambdaFnTimeoutSecs
       MemorySize: !Ref UpdateLifecycleLambdaFnMemoryMB
       LoggingConfig:
-        LogGroup: !Ref UpdateLifecycleLambdaFnLogGrp
+        LogGroup: !Ref LambdaFnLogGrp
         LogFormat: JSON
         SystemLogLevel: WARN
         ApplicationLogLevel: !Ref LogLevel
@@ -1188,10 +1254,7 @@ Resources:
       # S3), supply shared, multi-handler source code in-line...
       Environment:
         Variables:
-          NEW_DELETE_AFTER_DAYS: !Ref NewDeleteAfterDays
-          COPY_ROLE_ARN: ""  # Not needed by this handler
-          BACKUP_VAULT_NAME: !Ref VaultName
-          DESTINATION_BACKUP_VAULT_ARN: ""  # Not needed by this handler
+          VAULT_NAME: !Ref VaultName
       Handler: index.lambda_handler_update_lifecycle
       Code:
         ZipFile: |
@@ -1217,21 +1280,10 @@ Resources:
           time.tzset()
           # See get_update_lifecycle_kwargs and lambda_handler_update_lifecycle
 
-          NEW_DELETE_AFTER_DAYS = int(os.environ["NEW_DELETE_AFTER_DAYS"])
-
-
-          def get_backup_action_kwargs_base():
-            """Get base kwargs for AWS Backup methods, from environment variables
-            """
-            backup_vault_name = os.environ["BACKUP_VAULT_NAME"]
-            return {
-              "DEFAULT": {"BackupVaultName": backup_vault_name},
-              "start_copy_job": {
-                "IamRoleArn": os.environ["COPY_ROLE_ARN"],
-                "SourceBackupVaultName": backup_vault_name,
-                "DestinationBackupVaultArn": os.environ["DESTINATION_BACKUP_VAULT_ARN"],
-              },
-            }
+          VAULT_NAME = os.environ["VAULT_NAME"]
+          COPY_ROLE_ARN = os.environ.get("COPY_ROLE_ARN", "")
+          AWS_PARTITION = os.environ.get("AWS_PARTITION", "")
+          BACKUP_ACCOUNT_ID = os.environ.get("BACKUP_ACCOUNT_ID", "")
 
 
           def log(entry_type, entry_value, log_level=logging.INFO):
@@ -1239,58 +1291,37 @@ Resources:
             """
             entry_value_out = json.loads(json.dumps(entry_value, default=str))
             # Avoids "Object of type datetime is not JSON serializable" in
-            # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/9efb462/awslambdaric/lambda_runtime_log_utils.py#L109-L135
+            # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/2e3d4b4/awslambdaric/lambda_runtime_log_utils.py#L110-L139
             #
             # The JSON encoder in the AWS Lambda Python runtime isn't configured to
             # serialize datatime values in responses returned by AWS's own Python SDK!
             #
             # Alternative considered:
-            # https://docs.powertools.aws.dev/lambda/python/latest/core/logger/
+            # https://docs.powertools.aws.dev/lambda/python/latest/core/logger
 
             logger.log(
               log_level, "", extra={"type": entry_type, "value": entry_value_out}
             )
 
 
-          def boto3_success(resp):
-            """Take a boto3 response, return True if result was success
-
-            Success means an AWS operation has started, not necessarily that it has
-            completed. For example, it may take hours to copy a backup.
-            """
-            return (
-              isinstance(resp, dict)
-              and isinstance(resp.get("ResponseMetadata"), dict)
-              and (resp["ResponseMetadata"].get("HTTPStatusCode") == 200)
-            )
-
-
           class Backup():
             """AWS Backup recovery point
-
-            If the object is not also a subclass, then the recovery point is the
-            original, from start_backup_job :
-            https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
             """
-            _boto3_client = None
-            action_kwargs_base = get_backup_action_kwargs_base()
-
-            _from_job_id_key = "backupJobId"
 
             def __init__(self, from_event):
               self._from_event = from_event
 
-            @staticmethod
-            def new(from_event):
-              """Create a Backup or BackupCopy instance
+            _action_kwargs_base = {
+              "start_copy_job": {
+                "SourceBackupVaultName": VAULT_NAME,
+                "IamRoleArn": COPY_ROLE_ARN,
+              },
+              "DEFAULT": {
+                "BackupVaultName": VAULT_NAME,
+              },
+            }
 
-              Takes a start_backup_job or start_copy_job state change COMPLETED event
-              (EventBridge filters in CloudFormation allow only acceptable events)
-              """
-              new_object_class = (
-                BackupCopy if from_event["detail-type"].startswith("Copy ") else Backup
-              )
-              return new_object_class(from_event)
+            _boto3_client = None
 
             @classmethod
             def get_boto3_client(cls):
@@ -1310,104 +1341,124 @@ Resources:
                 )
               return cls._boto3_client
 
-            # pylint: disable=missing-function-docstring
-
             @property
-            def _from_job_details(self):
-              return self._from_event.get("detail", {})
-
-            @property
-            def from_event(self):
+            def from_event(self):  # pylint: disable=missing-function-docstring
               return self._from_event
 
             @property
-            def from_job_id(self):
-              return self._from_job_details.get(self._from_job_id_key, "")
+            def arn(self):  # pylint: disable=missing-function-docstring
+              return self._from_event.get("originalEvent", {}).get("resources", [""])[0]
 
-            @property
-            def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-              return ""
-
-            @property
-            def arn(self):
-              return self._from_event.get("resources", [""])[0]
-
-            # pylint: enable=missing-function-docstring
-
-            def valid(self):
+            def validate(self):
               """Return True if all required attributes are non-empty
 
               A cursory validation, but EventBridge filters in CloudFormation allow only
               acceptable events, which come from AWS Backup.
               """
-              return all([self.from_job_id, self.arn])  # More attributes coming!
+              if not bool(self.arn):
+                raise ValueError("Could not find recoveryPoint ARN in event input")
 
-            def log_action(self, action_name, action_kwargs, exception=None, resp=None):
+            def log_action(self, action_name, action_kwargs, result):
               """Log the AWS Lambda event and the outcome of an action on a backup
               """
-              log_level = logging.INFO if boto3_success(resp) else logging.ERROR
+              if isinstance(result, Exception):
+                log_level = logging.ERROR
+                entry_type = "EXCEPTION"
+              else:
+                log_level = logging.INFO
+                entry_type = "AWS_RESPONSE"
 
               log("LAMBDA_EVENT", self.from_event, log_level)
               log(f"{action_name.upper()}_KWARGS", action_kwargs, log_level)
-
-              if exception is not None:
-                log("EXCEPTION", exception, log_level)
-              elif resp is not None:
-                log("AWS_RESPONSE", resp, log_level)
+              log(entry_type, result, log_level)
 
             def do_action(
               self, action_name, kwargs_add={}, validate_backup=True
             ):  # pylint: disable=dangerous-default-value
               """Take an AWS Backup method and kwargs, log outcome, and return response
               """
-              action_kwargs = self.action_kwargs_base.get(
-                action_name, self.action_kwargs_base["DEFAULT"]
-              ) | kwargs_add  # Copy, don't update!
-              resp = None
+              action_kwargs = self._action_kwargs_base.get(
+                action_name, self._action_kwargs_base["DEFAULT"]
+              ) | {"RecoveryPointArn": self.arn} | kwargs_add  # Copy, don't update!
+              result = None
 
-              if validate_backup and not self.valid():
-                self.log_action(action_name, action_kwargs)
-              else:
+              try:
+                if validate_backup:
+                  self.validate()
                 action_method = getattr(self.get_boto3_client(), action_name)
-                try:
-                  resp = action_method(**action_kwargs)
-                except Exception as misc_exception:
-                  self.log_action(action_name, action_kwargs, exception=misc_exception)
-                  raise
-                self.log_action(action_name, action_kwargs, resp=resp)
+                result = action_method(**action_kwargs)
+              except Exception as misc_exception:  # pylint: disable=broad-exception-caught
+                result = misc_exception
+              self.log_action(action_name, action_kwargs, result)
+              if isinstance(result, Exception):
+                raise result
 
-              return resp
+              return result
 
 
-          class BackupCopy(Backup):
-            """AWS Backup recovery point copy, from start_copy_job
+          class BackupJobResult(Backup):
+            """AWS Backup recovery point - start_backup_job result
+
+            https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
+            """
+
+            def __init__(self, from_event):
+              super().__init__(from_event)
+              self._destination_region = self.from_event.get("destinationRegion", "")
+              self._destination_vault_arn = ":".join([
+                "arn",
+                AWS_PARTITION,
+                "backup",
+                self._destination_region,
+                BACKUP_ACCOUNT_ID,
+                "backup-vault",
+                VAULT_NAME
+              ])
+
+            @property
+            def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
+              return self._destination_vault_arn
+
+            def validate(self):
+              super().validate()
+              if not bool(self._destination_region):
+                raise ValueError("Could not find destination region in event input")
+
+
+          class CopyJobSource(Backup):
+            """AWS Backup recovery point copy - start_copy_job source
 
             https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#copy-job-state-change-completed
-
-            Why didn't AWS use the same structure and keys for start_backup_job and the
-            destination half of start_copy_job ? Both methods put a backup into a
-            destination vault!
             """
-            _from_job_id_key = "copyJobId"
+
+            def __init__(self, from_event):
+              super().__init__(from_event)
+              self._new_delete_after_days_str = self.from_event.get(
+                "newDeleteAfterDays", ""
+              )
 
             @property
-            def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-              return self._from_event.get("resources", [""])[0]
+            def new_delete_after_days(self):  # pylint: disable=missing-function-docstring
+              return int(self._new_delete_after_days_str)
 
-            @property
-            def arn(self):  # pylint: disable=missing-function-docstring
-              return self._from_job_details.get("destinationRecoveryPointArn", "")
+            def validate(self):
+              super().validate()
+              try:
+                self.new_delete_after_days
+              except ValueError as value_err_exception:
+                raise ValueError(
+                  "Could not find newDeleteAfterDays in event input, "
+                  "or could not convert string to integer."
+                ) from value_err_exception
+              if self.new_delete_after_days < 1:
+                raise ValueError(
+                  "newDeleteAfterDays must be greater than or equal to 1."
+                )
 
-            def valid(self):
-              """Return True if all required attributes are non-empty
 
-              A cursory validation, but EventBridge filters in CloudFormation allow only
-              acceptable events, which come from AWS Backup.
-              """
-              return all([self.from_job_id, self.from_backup_arn, self.arn])
-
-
-          def get_update_lifecycle_kwargs(describe_resp, today_date):
+          def get_update_lifecycle_kwargs(
+            describe_resp, today_date, new_delete_after_days
+          ):
             """Take a describe response, return update_recovery_point_lifecycle kwargs
 
             Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -1430,7 +1481,7 @@ Resources:
             creation_date = describe_resp["CreationDate"].date()
             days_old = (today_date - creation_date).days + 1
 
-            delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
+            delete_after_days_minima = [days_old, 1, new_delete_after_days]
             delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
 
             storage_class = describe_resp.get("StorageClass")
@@ -1469,14 +1520,14 @@ Resources:
 
 
           def lambda_handler_copy(event, context):  # pylint: disable=unused-argument
-            """Copy a backup to a vault in another AWS account OR another region
+            """Copy a backup to a vault in another region and/or AWS account
             """
-            backup = Backup.new(event)
+            backup = BackupJobResult(event)
             backup.do_action(
               "start_copy_job",
               {
-                "RecoveryPointArn": backup.arn,
-                "IdempotencyToken": backup.from_job_id,
+                "DestinationBackupVaultArn": backup.destination_vault_arn,
+                "IdempotencyToken": f"{backup.arn}-{backup.destination_vault_arn}",
               }
             )
 
@@ -1488,17 +1539,15 @@ Resources:
             - Before calling describe_recovery_point , use tzset to set the local time
               zone to UTC, for correct results.
             """
-            backup = Backup.new(event)
-            kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
-            describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
-            if boto3_success(describe_resp):
-              kwargs_lifecycle = get_update_lifecycle_kwargs(
-                describe_resp, datetime.date.today()
+            backup = CopyJobSource(event)
+            describe_resp = backup.do_action("describe_recovery_point")
+            kwargs_lifecycle = get_update_lifecycle_kwargs(
+              describe_resp, datetime.date.today(), backup.new_delete_after_days
+            )
+            if kwargs_lifecycle:
+              backup.do_action(
+                "update_recovery_point_lifecycle",
+                kwargs_lifecycle,
+                validate_backup=False
               )
-              if kwargs_lifecycle:
-                backup.do_action(
-                  "update_recovery_point_lifecycle",
-                  kwargs_lifecycle | kwargs_operand,
-                  validate_backup=False
-                )
         # ZIPFILE_END

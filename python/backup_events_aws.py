@@ -20,21 +20,10 @@ os.environ["TZ"] = "UTC"
 time.tzset()
 # See get_update_lifecycle_kwargs and lambda_handler_update_lifecycle
 
-NEW_DELETE_AFTER_DAYS = int(os.environ["NEW_DELETE_AFTER_DAYS"])
-
-
-def get_backup_action_kwargs_base():
-  """Get base kwargs for AWS Backup methods, from environment variables
-  """
-  backup_vault_name = os.environ["BACKUP_VAULT_NAME"]
-  return {
-    "DEFAULT": {"BackupVaultName": backup_vault_name},
-    "start_copy_job": {
-      "IamRoleArn": os.environ["COPY_ROLE_ARN"],
-      "SourceBackupVaultName": backup_vault_name,
-      "DestinationBackupVaultArn": os.environ["DESTINATION_BACKUP_VAULT_ARN"],
-    },
-  }
+VAULT_NAME = os.environ["VAULT_NAME"]
+COPY_ROLE_ARN = os.environ.get("COPY_ROLE_ARN", "")
+AWS_PARTITION = os.environ.get("AWS_PARTITION", "")
+BACKUP_ACCOUNT_ID = os.environ.get("BACKUP_ACCOUNT_ID", "")
 
 
 def log(entry_type, entry_value, log_level=logging.INFO):
@@ -42,59 +31,37 @@ def log(entry_type, entry_value, log_level=logging.INFO):
   """
   entry_value_out = json.loads(json.dumps(entry_value, default=str))
   # Avoids "Object of type datetime is not JSON serializable" in
-  # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/9efb462/awslambdaric/lambda_runtime_log_utils.py#L109-L135
+  # https://github.com/aws/aws-lambda-python-runtime-interface-client/blob/2e3d4b4/awslambdaric/lambda_runtime_log_utils.py#L110-L139
   #
   # The JSON encoder in the AWS Lambda Python runtime isn't configured to
   # serialize datatime values in responses returned by AWS's own Python SDK!
   #
   # Alternative considered:
-  # https://docs.powertools.aws.dev/lambda/python/latest/core/logger/
+  # https://docs.powertools.aws.dev/lambda/python/latest/core/logger
 
   logger.log(
     log_level, "", extra={"type": entry_type, "value": entry_value_out}
   )
 
 
-def boto3_success(resp):
-  """Take a boto3 response, return True if result was success
-
-  Success means an AWS operation has started, not necessarily that it has
-  completed. For example, it may take hours to copy a backup.
-  """
-  return (
-    isinstance(resp, dict)
-    and isinstance(resp.get("ResponseMetadata"), dict)
-    and (resp["ResponseMetadata"].get("HTTPStatusCode") == 200)
-  )
-
-
 class Backup():
   """AWS Backup recovery point
-
-  If the object is not also a subclass, then the recovery point is the
-  original, from start_backup_job :
-  https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
   """
-  _boto3_client = None
-
-  action_kwargs_base = get_backup_action_kwargs_base()
-
-  _from_job_id_key = "backupJobId"
 
   def __init__(self, from_event):
     self._from_event = from_event
 
-  @staticmethod
-  def new(from_event):
-    """Create a Backup or BackupCopy instance
+  _action_kwargs_base = {
+    "start_copy_job": {
+      "SourceBackupVaultName": VAULT_NAME,
+      "IamRoleArn": COPY_ROLE_ARN,
+    },
+    "DEFAULT": {
+      "BackupVaultName": VAULT_NAME,
+    },
+  }
 
-    Takes a start_backup_job or start_copy_job state change COMPLETED event
-    (EventBridge filters in CloudFormation allow only acceptable events)
-    """
-    new_object_class = (
-      BackupCopy if from_event["detail-type"].startswith("Copy ") else Backup
-    )
-    return new_object_class(from_event)
+  _boto3_client = None
 
   @classmethod
   def get_boto3_client(cls):
@@ -114,104 +81,124 @@ class Backup():
       )
     return cls._boto3_client
 
-  # pylint: disable=missing-function-docstring
-
   @property
-  def _from_job_details(self):
-    return self._from_event.get("detail", {})
-
-  @property
-  def from_event(self):
+  def from_event(self):  # pylint: disable=missing-function-docstring
     return self._from_event
 
   @property
-  def from_job_id(self):
-    return self._from_job_details.get(self._from_job_id_key, "")
+  def arn(self):  # pylint: disable=missing-function-docstring
+    return self._from_event.get("originalEvent", {}).get("resources", [""])[0]
 
-  @property
-  def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-    return ""
-
-  @property
-  def arn(self):
-    return self._from_event.get("resources", [""])[0]
-
-  # pylint: enable=missing-function-docstring
-
-  def valid(self):
+  def validate(self):
     """Return True if all required attributes are non-empty
 
     A cursory validation, but EventBridge filters in CloudFormation allow only
     acceptable events, which come from AWS Backup.
     """
-    return all([self.from_job_id, self.arn])  # More attributes coming!
+    if not bool(self.arn):
+      raise ValueError("Could not find recoveryPoint ARN in event input")
 
-  def log_action(self, action_name, action_kwargs, exception=None, resp=None):
+  def log_action(self, action_name, action_kwargs, result):
     """Log the AWS Lambda event and the outcome of an action on a backup
     """
-    log_level = logging.INFO if boto3_success(resp) else logging.ERROR
+    if isinstance(result, Exception):
+      log_level = logging.ERROR
+      entry_type = "EXCEPTION"
+    else:
+      log_level = logging.INFO
+      entry_type = "AWS_RESPONSE"
 
     log("LAMBDA_EVENT", self.from_event, log_level)
     log(f"{action_name.upper()}_KWARGS", action_kwargs, log_level)
-
-    if exception is not None:
-      log("EXCEPTION", exception, log_level)
-    elif resp is not None:
-      log("AWS_RESPONSE", resp, log_level)
+    log(entry_type, result, log_level)
 
   def do_action(
     self, action_name, kwargs_add={}, validate_backup=True
   ):  # pylint: disable=dangerous-default-value
     """Take an AWS Backup method and kwargs, log outcome, and return response
     """
-    action_kwargs = self.action_kwargs_base.get(
-      action_name, self.action_kwargs_base["DEFAULT"]
-    ) | kwargs_add  # Copy, don't update!
-    resp = None
+    action_kwargs = self._action_kwargs_base.get(
+      action_name, self._action_kwargs_base["DEFAULT"]
+    ) | {"RecoveryPointArn": self.arn} | kwargs_add  # Copy, don't update!
+    result = None
 
-    if validate_backup and not self.valid():
-      self.log_action(action_name, action_kwargs)
-    else:
+    try:
+      if validate_backup:
+        self.validate()
       action_method = getattr(self.get_boto3_client(), action_name)
-      try:
-        resp = action_method(**action_kwargs)
-      except Exception as misc_exception:
-        self.log_action(action_name, action_kwargs, exception=misc_exception)
-        raise
-      self.log_action(action_name, action_kwargs, resp=resp)
+      result = action_method(**action_kwargs)
+    except Exception as misc_exception:  # pylint: disable=broad-exception-caught
+      result = misc_exception
+    self.log_action(action_name, action_kwargs, result)
+    if isinstance(result, Exception):
+      raise result
 
-    return resp
+    return result
 
 
-class BackupCopy(Backup):
-  """AWS Backup recovery point copy, from start_copy_job
+class BackupJobResult(Backup):
+  """AWS Backup recovery point - start_backup_job result
+
+  https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#backup-job-state-change-completed
+  """
+
+  def __init__(self, from_event):
+    super().__init__(from_event)
+    self._destination_region = self.from_event.get("destinationRegion", "")
+    self._destination_vault_arn = ":".join([
+      "arn",
+      AWS_PARTITION,
+      "backup",
+      self._destination_region,
+      BACKUP_ACCOUNT_ID,
+      "backup-vault",
+      VAULT_NAME
+    ])
+
+  @property
+  def destination_vault_arn(self):  # pylint: disable=missing-function-docstring
+    return self._destination_vault_arn
+
+  def validate(self):
+    super().validate()
+    if not bool(self._destination_region):
+      raise ValueError("Could not find destination region in event input")
+
+
+class CopyJobSource(Backup):
+  """AWS Backup recovery point copy - start_copy_job source
 
   https://docs.aws.amazon.com/aws-backup/latest/devguide/eventbridge.html#copy-job-state-change-completed
-
-  Why didn't AWS use the same structure and keys for start_backup_job and the
-  destination half of start_copy_job ? Both methods put a backup into a
-  destination vault!
   """
-  _from_job_id_key = "copyJobId"
+
+  def __init__(self, from_event):
+    super().__init__(from_event)
+    self._new_delete_after_days_str = self.from_event.get(
+      "newDeleteAfterDays", ""
+    )
 
   @property
-  def from_backup_arn(self):  # Reserve from_rsrc_arn for original backups
-    return self._from_event.get("resources", [""])[0]
+  def new_delete_after_days(self):  # pylint: disable=missing-function-docstring
+    return int(self._new_delete_after_days_str)
 
-  @property
-  def arn(self):  # pylint: disable=missing-function-docstring
-    return self._from_job_details.get("destinationRecoveryPointArn", "")
+  def validate(self):
+    super().validate()
+    try:
+      self.new_delete_after_days
+    except ValueError as value_err_exception:
+      raise ValueError(
+        "Could not find newDeleteAfterDays in event input, "
+        "or could not convert string to integer."
+      ) from value_err_exception
+    if self.new_delete_after_days < 1:
+      raise ValueError(
+        "newDeleteAfterDays must be greater than or equal to 1."
+      )
 
-  def valid(self):
-    """Return True if all required attributes are non-empty
 
-    A cursory validation, but EventBridge filters in CloudFormation allow only
-    acceptable events, which come from AWS Backup.
-    """
-    return all([self.from_job_id, self.from_backup_arn, self.arn])
-
-
-def get_update_lifecycle_kwargs(describe_resp, today_date):
+def get_update_lifecycle_kwargs(
+  describe_resp, today_date, new_delete_after_days
+):
   """Take a describe response, return update_recovery_point_lifecycle kwargs
 
   Sets/reduces DeleteAfterDays, so a backup that has been copied to another
@@ -234,7 +221,7 @@ def get_update_lifecycle_kwargs(describe_resp, today_date):
   creation_date = describe_resp["CreationDate"].date()
   days_old = (today_date - creation_date).days + 1
 
-  delete_after_days_minima = [days_old, 1, NEW_DELETE_AFTER_DAYS]
+  delete_after_days_minima = [days_old, 1, new_delete_after_days]
   delete_after_days_maximum = lifecycle.get("DeleteAfterDays")  # Don't delay
 
   storage_class = describe_resp.get("StorageClass")
@@ -273,14 +260,14 @@ def get_update_lifecycle_kwargs(describe_resp, today_date):
 
 
 def lambda_handler_copy(event, context):  # pylint: disable=unused-argument
-  """Copy a backup to a vault in another AWS account OR another region
+  """Copy a backup to a vault in another region and/or AWS account
   """
-  backup = Backup.new(event)
+  backup = BackupJobResult(event)
   backup.do_action(
     "start_copy_job",
     {
-      "RecoveryPointArn": backup.arn,
-      "IdempotencyToken": backup.from_job_id,
+      "DestinationBackupVaultArn": backup.destination_vault_arn,
+      "IdempotencyToken": f"{backup.arn}-{backup.destination_vault_arn}",
     }
   )
 
@@ -292,16 +279,14 @@ def lambda_handler_update_lifecycle(event, context):  # pylint: disable=unused-a
   - Before calling describe_recovery_point , use tzset to set the local time
     zone to UTC, for correct results.
   """
-  backup = Backup.new(event)
-  kwargs_operand = {"RecoveryPointArn": backup.from_backup_arn}
-  describe_resp = backup.do_action("describe_recovery_point", kwargs_operand)
-  if boto3_success(describe_resp):
-    kwargs_lifecycle = get_update_lifecycle_kwargs(
-      describe_resp, datetime.date.today()
+  backup = CopyJobSource(event)
+  describe_resp = backup.do_action("describe_recovery_point")
+  kwargs_lifecycle = get_update_lifecycle_kwargs(
+    describe_resp, datetime.date.today(), backup.new_delete_after_days
+  )
+  if kwargs_lifecycle:
+    backup.do_action(
+      "update_recovery_point_lifecycle",
+      kwargs_lifecycle,
+      validate_backup=False
     )
-    if kwargs_lifecycle:
-      backup.do_action(
-        "update_recovery_point_lifecycle",
-        kwargs_lifecycle | kwargs_operand,
-        validate_backup=False
-      )
