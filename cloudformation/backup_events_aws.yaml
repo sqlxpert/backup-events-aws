@@ -743,7 +743,7 @@ Resources:
           backupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
           createdBy:
-            backupPlanArn: [ { "exists": false } ]
+            backupPlanArn: [ { exists: false } ]
       Targets:
 
         - Id: CopyToBackupAccountBackupRegion
@@ -792,7 +792,7 @@ Resources:
           backupVaultArn:
             - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
           createdBy:
-            backupPlanArn: [ { "exists": false } ]
+            backupPlanArn: [ { exists: false } ]
       Targets:
         - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
@@ -823,7 +823,7 @@ Resources:
                   - !Ref BackupRegionAlternate
                   - !Ref BackupRegion
           createdBy:
-            backupPlanArn: [ { "exists": false } ]
+            backupPlanArn: [ { exists: false } ]
       Targets:
         - Id: UpdateOriginalBackupLifecycle
           InputTransformer:
@@ -861,13 +861,13 @@ Resources:
                   - !Ref BackupRegionAlternate
                   - !Ref BackupRegion
           createdBy:
-            backupPlanArn: [ { "exists": false } ]
+            backupPlanArn: [ { exists: false } ]
       Targets:
         - Id: SendToErrorQueue
           Arn: !GetAtt ErrorQueue.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 1800  # 30 minutes
-      State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
+      State: ENABLED
 
   # Administrator: Block other invocations
 
