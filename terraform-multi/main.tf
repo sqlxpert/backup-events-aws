@@ -89,7 +89,8 @@ resource "aws_s3_object" "backup_events_cloudformation" {
 # affects all StackSet instances.
 
 resource "aws_cloudformation_stack_set" "backup_events" {
-  name = "BackupEvents${var.backup_events_stackset_name_suffix}"
+  name        = "BackupEvents${var.backup_events_stackset_name_suffix}"
+  description = "Cross-account, cross-region backups with AWS Backup and EventBridge"
 
   template_url = join("", [
     "https://${aws_s3_bucket.backup_events_cloudformation.bucket_regional_domain_name}/",
