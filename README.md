@@ -363,8 +363,8 @@ resources potentially deployed to the backup account.
         source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.0.0"
         # Reference a specific version from github.com/sqlxpert/backup-events-aws/releases
 
-        backup_events_stackset_regions                   = ["us-east-1", "us-west-2", ]
-        backup_events_stackset_organizational_unit_names = ["MyOrganizationalUnit", ]
+        backup_events_stackset_regions                 = ["us-east-1", "us-west-2", ]
+        backup_events_stackset_organizational_unit_ids = ["ou-abcd-efghijkl", ]
 
         backup_events_stackset_params = {
           BackupAccountId       = "999977775555"
@@ -374,8 +374,6 @@ resources potentially deployed to the backup account.
       }
       ```
 
-      - &#9888; **In Terraform, specify the name(s) of the target organization
-        unit(s)**, not the `ou-` ID(s).
       - Set parameter keys as in Step&nbsp;4 of the
         [quick-start](#quick-start).
       - `CopyRoleName` - _Set if you defined and disseminated a custom role._

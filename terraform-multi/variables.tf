@@ -116,14 +116,14 @@ variable "backup_events_tags" {
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeploymentTargets.html
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudformation_stack_set_instance#parameter_overrides-1
 
-variable "backup_events_stackset_organizational_unit_names" {
+variable "backup_events_stackset_organizational_unit_ids" {
   type        = list(string)
-  description = "List of the names (not the IDs) of the organizational units in which to create instances of the CloudFormation StackSet. At least one is required. The organizational units must exist. Within a region, deployments will always proceed in alphabetical order by OU ID (not by name)."
+  description = "List of the IDs of the organizational units in which to create instances of the CloudFormation StackSet. At least one is required. Within a region, deployments will always proceed in alphabetical order by OU ID (not by name)."
 
   validation {
-    error_message = "At least one organizational unit name is required."
+    error_message = "At least one organizational unit ID is required."
 
-    condition = length(var.backup_events_stackset_organizational_unit_names) >= 1
+    condition = length(var.backup_events_stackset_organizational_unit_ids) >= 1
   }
 }
 
