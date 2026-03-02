@@ -247,12 +247,44 @@ Click to view the architecture diagram:
     in the main/resource account:
 
     - The [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
-
     - The `BackupEvents-ErrorQueue`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
+    - AWS&nbsp;Backup
+      [backup&nbsp;jobs](https://console.aws.amazon.com/backup/home#/jobs/backup)
+      and
+      [copy&nbsp;jobs](https://console.aws.amazon.com/backup/home#/jobs/copy).
+      Select a longer time window than "Last 24 hours", if necessary.
     - [CloudTrail&rarr;Event&nbsp;history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
       Tips: Change "Read-only" to `true` to see more events. Select the gear
       icon at the right to add the "Error code" column.
+
+    Keep the start window and the completion window as short as possible when
+    you start an on-demand backup, so that you will not have to wait many hours
+    or days for error feedback from AWS&nbsp;Backup.
+
+    Sometimes, a resource is not in the expected state when AWS&nbsp;Backup
+    actually starts a requested backup. For example, an RDS database instance
+    must be in the `available` state.
+
+    Timeouts and cross-region network problems are rare but permissions
+    problems are a likely cause of errors. When you start an on-demand backup,
+    make sure you have permission to pass your chosen backup role to
+    AWS&nbsp;Backup. After checking and correcting backup vault policies,
+    policies and the permissions boundary for your backup role, policies and
+    the permissions boundary for a custom backup copy role, and any central
+    service control policies and resource control policies (SCPs and RCPs),
+    start a new on-demand backup.
+
+    If a copy job did not start, or if it started but failed, intervene before
+    the deletion day (if any) that you specified when you started the on-demand
+    backup. The original backup will be available for you to re-copy.
+
+    Keep in mind that successful completion of certain on-demand copy jobs will
+    trigger Backup Events actions. Completion of the first copy will trigger
+    the second, and completion of the second copy will trigger reduction of the
+    original backup's retention period. To disable the triggers, temporarily
+    set the `EnableCopy` and/or `EnableUpdateLifecycle` CloudFormation
+    parameters to `false`&nbsp.
 
 14. Delete the EFS file system and all of its AWS&nbsp;Backup backups (or let
     the backups expire, at a small cost).
@@ -483,7 +515,7 @@ software at your own risk. You are encouraged to evaluate the source code._
   from the second day, and so on, within reason) is a better investment of
   engineering effort. Consider
   [AWS&nbsp;Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)!
-- Set lifecycles when making on-demand backups, but **specify 7&nbsp;days
+- Set lifecycles when starting on-demand backups, but **specify 7&nbsp;days
   minimum before backups are transitioned to cold storage** / the "archive
   tier". Allow time for cross-account and cross-region copies to complete, and
   for original backups to be scheduled for deletion. If an original backup
