@@ -16,8 +16,8 @@ Backup Events automatically **copies on‑demand backups to**:
 
 Then, it **saves money** by scheduling the original backup for deletion.
 
-It also **monitors** on-demand backup and copy jobs, sending a message to an
-error queue if something goes wrong.
+It also **monitors** on-demand backups and copies, sending messages to an error
+queue if they fail.
 
 You can get started immediately, or customize Backup Events.
 
@@ -103,14 +103,17 @@ retain the sample vaults, disable Backup Events instead, by changing the
 <br/>
 
 If you sometimes take on-demand backups, update your Backup Events
-CloudFormation StackSet or stacks. `v2.0.0`&nbsp;:
+CloudFormation StackSet or stacks. `v2.1.0`&nbsp;:
 
 - Ignores scheduled backups from backup plans (because plans support
   CopyActions) but still copies on-demand backups.
-- Directly copies an on-demand backup from the resource account to _both_ the
-  resource and backup regions in the backup account.
-- Reduces retention of an on-demand backup after the more important of the two
-  copies, to the backup region, has been completed.
+- Copies an on-demand backup from the resource account directly to the backup
+  account, backup region.
+- If the first copy completes successfully, copies the on-demand backup from
+  the resource account to the backup account, resource region.
+- If the second copy completes successfully, reduces retention of the original
+  on-demand backup.
+- Tracks on-demand backup and on-demand copy failures in the error queue.
 
 </details>
 
@@ -360,7 +363,7 @@ resources potentially deployed to the backup account.
 
       ```terraform
       module "backup_events_stackset" {
-        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.0.0"
+        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.1.0"
         # Reference a specific version from github.com/sqlxpert/backup-events-aws/releases
 
         backup_events_stackset_regions                 = ["us-east-1", "us-west-2", ]
@@ -420,22 +423,35 @@ software at your own risk. You are encouraged to evaluate the source code._
     they have been copied can access backups in any vault in the same AWS
     account and region. Tampering with the function's source code, environment
     variable or event input would allow switching vaults. The backup account is
-    a security barrier; the function is never deployed there. The problem?
-    [Backup or recoveryPoint ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-recoveryPoint)
+    a security barrier; the function is never deployed there. The problem? Flat
+    [backup or "recoveryPoint" ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-recoveryPoint)
     do not include the vault name, and
     [UpdateRecoveryPointLifecycle](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-UpdateRecoveryPointLifecycle)
-    does not support an IAM condition key for vault name or ARN.
+    does not support an IAM condition key for vault ARN.
 - Readable IAM policies, broken down into discrete statements by service,
-  resource or principal. Policies are formatted as CloudFormation YAML rather
-  than JSON.
-- Tolerance for slow operations and clock drift in a distributed system
-  - The function that reduces retention of original backups after they have
-    been copied applies a full-day margin.
-- Options to encrypt the log and the error queue at rest, using the AWS Key
-  Management System (KMS)
+  resource or principal. Policies, except those open to customization, are
+  formatted as CloudFormation YAML rather than native JSON.
 - Least-privilege SQS queue policy with support for customization
-- Option to use custom vaults (with custom KMS keys) and a custom role for
-  AWS&nbsp;Backup
+- Options to encrypt the log and the error queue at rest, using the AWS Key
+  Management System
+- Options to use a custom, multi-region KMS key for the sample backup vaults or
+  to use custom backup vaults, with KMS keys and vault access policies of your
+  choice
+  - To prevent use of backups if an AWS account containing a backup vault is
+    removed from the organization, encrypt backups (and original resources, for
+    resource types that do _not_ support
+    [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
+    with a custom KMS key housed in an account separate from the original
+    resources and the backup vault. In the key policy, deny usage by principals
+    outside the organization. Control over key usage is a major benefit of
+    creating a customer-managed KMS key. Having the key policy serve as a
+    security barrier is a major benefit of housing the key in an account
+    separate from the account where it is used. Limit access to this separate
+    account to people authorized to change key policies.
+- Option to use a custom role for AWS&nbsp;Backup copy jobs
+- Tolerance for slow operations and clock drift in a distributed system. The
+  function that reduces retention of original backups after they have been
+  copied applies a full-day margin.
 
 ### Security Steps You Can Take
 
@@ -531,10 +547,10 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Up-to-date:** AWS never returned to update the sample solution for
   multi-region encryption keys or direct cross-account Lambda function
-  invocation. A multi-region key make it easy to move backups between regions.
-  Direct cross-account invocation eliminates several components. (My
-  February,&nbsp;2026 update has eliminated the need for a cross-account
-  invocation mechanism.)
+  invocation. A multi-region key makes it easy to move backups between regions.
+  Direct cross-account Lambda function invocation eliminates several
+  infrastructure components. (My February,&nbsp;2026 update has eliminated the
+  need for a cross-account invocation mechanism.)
 
 - **Centrally deployable:** 1&nbsp;CloudFormation template replaces AWS's
   3&nbsp;separate templates. Advanced users can use the template to create a
@@ -546,28 +562,21 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Supports on-demand backups:** AWS's solution depends on the copy step
   available in backup plans but not in on-demand backup requests. Waiting for
-  an on-demand backup job to complete before you manually start copy jobs is
+  an on-demand backup job to complete before you start on-demand copy jobs is
   tedious and prone to error. Also, you might forget to check for copy
   completion. (As of my February,&nbsp;2026, update, only on-demand backups are
   supported.)
 
-- **Supports a multi-region, cross-account encryption key:** A multi-region KMS
-  key makes moving encrypted backups from one region to another easier. Housing
-  the key in a central, limited-access account increases control. (I am not
-  publishing my custom key policy for AWS&nbsp;Backup. If you need multi-region
-  KMS encryption keys and least privilege key policies, contact me! It's the
-  kind of work I do for a living.)
-
-- **Streamlined:** Object-oriented Python code interprets backup job events
-  and copy job events. An abstract base class covers the many similarities and
+- **Streamlined:** Object-oriented Python code interprets backup events and
+  copy events. An abstract base class covers the many similarities and
   subclasses, the few differences. This way, the same primitives serve for
-  copying a backup and for reducing the backup's retention period. If AWS had
-  chosen more consistent key names, subclasses would not be necessary.
+  copying a backup and for reducing the backup's retention period. (If AWS had
+  chosen more consistent key names, subclasses would not be necessary.)
 
 - **Simple:** The function to reduce the retention period after copying is easy
   to understand. Minimum retention periods under various rules are added to a
-  list. At the end, the highest minimum is applied. The original backup can be
-  deleted as soon as AWS allows, but no sooner!
+  list. The longest one stands. The original backup can be deleted as soon as
+  AWS allows, but no sooner!
 
 </details>
 

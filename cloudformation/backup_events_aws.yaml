@@ -425,8 +425,9 @@ Resources:
                 "Condition": {
                   "ArnEquals": {
                     "aws:SourceArn": [
-                      "${BackupCompletedCopyLambdaFnEvRule.Arn}",
-                      "${Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
+                      "${BackupCompletedCopy1LambdaFnEvRule.Arn}",
+                      "${Copy1CompletedCopy2LambdaFnEvRule.Arn}",
+                      "${Copy2CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
                       "${BackupFailedSqsErrorQueueEvRule.Arn}",
                       "${CopyFailedSqsErrorQueueEvRule.Arn}"
                     ]
@@ -457,8 +458,9 @@ Resources:
                 "Condition": {
                   "ArnNotEquals": {
                     "aws:SourceArn": [
-                      "${BackupCompletedCopyLambdaFnEvRule.Arn}",
-                      "${Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
+                      "${BackupCompletedCopy1LambdaFnEvRule.Arn}",
+                      "${Copy1CompletedCopy2LambdaFnEvRule.Arn}",
+                      "${Copy2CompletedUpdateLifecycleLambdaFnEvRule.Arn}",
                       "${BackupFailedSqsErrorQueueEvRule.Arn}",
                       "${CopyFailedSqsErrorQueueEvRule.Arn}"
                     ],
@@ -666,14 +668,6 @@ Resources:
               Resource: "*"
         - Version: "2012-10-17"
           Statement:
-            - Sid: CopyWithinOrganizationOnly
-              Effect: Deny
-              Principal: "*"
-              Action: backup:CopyFromBackupVault
-              Resource: "*"
-              Condition:
-                "ForAllValues:StringNotLike":
-                  "backup:CopyTargetOrgPaths": "${aws:ResourceOrgID}/*"
             - Sid: CopyOnlyToSameVaultInBackupOrResourceRegionInBackupAccount
               Effect: Deny
               Principal: "*"
@@ -727,13 +721,12 @@ Resources:
         - !Ref AWS::NoValue
         - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${CloudWatchLogsKmsKey}"
 
-  BackupCompletedCopyLambdaFnEvRule:
+  BackupCompletedCopy1LambdaFnEvRule:
     Type: AWS::Events::Rule
     Condition: NotInBackupAccount
     Properties:
       Description: >-
-        After on-demand backup has been created,
-        copy to backup account (backup region and resource region)
+        After on-demand backup completes, copy to backup account, backup region
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Backup Job State Change ]
@@ -745,8 +738,7 @@ Resources:
           createdBy:
             backupPlanArn: [ { exists: false } ]
       Targets:
-
-        - Id: CopyToBackupAccountBackupRegion
+        - Id: Copy1ToBackupAccountBackupRegion
           InputTransformer:
             InputTemplate: !Sub
               - |
@@ -762,19 +754,6 @@ Resources:
           RetryPolicy:
             MaximumEventAgeInSeconds: 36000  # 10 hours
           DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
-
-        - Id: CopyToBackupAccountOriginalRegion
-          InputTransformer:
-            InputTemplate: !Sub |
-              {
-                "originalEvent" : <aws.events.event.json>,
-                "destinationRegion" : "${AWS::Region}"
-              }
-          Arn: !GetAtt CopyLambdaFn.Arn
-          RetryPolicy:
-            MaximumEventAgeInSeconds: 36000  # 10 hours
-          DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
-
       State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
 
   BackupFailedSqsErrorQueueEvRule:
@@ -800,13 +779,14 @@ Resources:
             MaximumEventAgeInSeconds: 1800  # 30 minutes
       State: ENABLED
 
-  Copy1CompletedUpdateLifecycleLambdaFnEvRule:
+  Copy1CompletedCopy2LambdaFnEvRule:
     Type: AWS::Events::Rule
     Condition: NotInBackupAccount
     Properties:
       Description: >-
-        After 1st (backup region) copy of on-demand backup has been stored in
-        backup account, schedule deletion of original backup
+        After copy from resource account to backup account, backup region
+        completes, copy backup from resource account to backup account,
+        resource region
       EventPattern:
         source: [ aws.backup ]
         detail-type: [ Copy Job State Change ]
@@ -822,6 +802,39 @@ Resources:
                   - InBackupRegion
                   - !Ref BackupRegionAlternate
                   - !Ref BackupRegion
+          createdBy:
+            backupPlanArn: [ { exists: false } ]
+      Targets:
+        - Id: Copy2ToBackupAccountOriginalRegion
+          InputTransformer:
+            InputTemplate: !Sub |
+              {
+                "originalEvent" : <aws.events.event.json>,
+                "destinationRegion" : "${AWS::Region}"
+              }
+          Arn: !GetAtt CopyLambdaFn.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 36000  # 10 hours
+          DeadLetterConfig: { Arn: !GetAtt ErrorQueue.Arn }
+      State: !If [ EnableCopyTrue, ENABLED, DISABLED ]
+
+  Copy2CompletedUpdateLifecycleLambdaFnEvRule:
+    Type: AWS::Events::Rule
+    Condition: NotInBackupAccount
+    Properties:
+      Description: >-
+        After copies to backup account, in both the backup region and the
+        resource region, complete, schedule deletion of original backup
+      EventPattern:
+        source: [ aws.backup ]
+        detail-type: [ Copy Job State Change ]
+        version: [ "0" ]
+        detail:
+          state: [ COMPLETED ]
+          sourceBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${VaultName}"
+          destinationBackupVaultArn:
+            - !Sub "arn:${AWS::Partition}:backup:${AWS::Region}:${BackupAccountId}:backup-vault:${VaultName}"
           createdBy:
             backupPlanArn: [ { exists: false } ]
       Targets:
@@ -871,20 +884,29 @@ Resources:
 
   # Administrator: Block other invocations
 
-  BackupCompletedCopyLambdaFnEvRulePerm:
+  BackupCompletedCopy1LambdaFnEvRulePerm:
     Type: AWS::Lambda::Permission
     Condition: NotInBackupAccount
     Properties:
-      SourceArn: !GetAtt BackupCompletedCopyLambdaFnEvRule.Arn
+      SourceArn: !GetAtt BackupCompletedCopy1LambdaFnEvRule.Arn
       Principal: events.amazonaws.com
       Action: lambda:InvokeFunction
       FunctionName: !Ref CopyLambdaFn
 
-  UpdateLifecycleLambdaFnPerm:
+  Copy1CompletedCopy2LambdaFnEvRulePerm:
     Type: AWS::Lambda::Permission
     Condition: NotInBackupAccount
     Properties:
-      SourceArn: !GetAtt Copy1CompletedUpdateLifecycleLambdaFnEvRule.Arn
+      SourceArn: !GetAtt Copy1CompletedCopy2LambdaFnEvRule.Arn
+      Principal: events.amazonaws.com
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CopyLambdaFn
+
+  Copy2CompletedUpdateLifecycleLambdaFnEvRulePerm:
+    Type: AWS::Lambda::Permission
+    Condition: NotInBackupAccount
+    Properties:
+      SourceArn: !GetAtt Copy2CompletedUpdateLifecycleLambdaFnEvRule.Arn
       Principal: events.amazonaws.com
       Action: lambda:InvokeFunction
       FunctionName: !Ref UpdateLifecycleLambdaFn
