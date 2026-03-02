@@ -489,27 +489,10 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Options to use a custom, multi-region KMS key for the sample backup vaults or
   to use custom backup vaults, with KMS keys and vault access policies of your
   choice
-  - To prevent use of backups if an AWS account containing a backup vault is
-    removed from the organization, encrypt backups (and original resources, for
-    resource types that do _not_ support
-    [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
-    with a custom KMS key housed in an account separate from the original
-    resources and the backup vault. In the key policy, deny usage by principals
-    outside the organization. Control over key usage is a major benefit of
-    creating a customer-managed KMS key. Having the key policy serve as a
-    security barrier is a major benefit of housing the key in an account
-    separate from the account where it is used. Limit access to this separate
-    account to people authorized to change key policies.
 - Option to use a custom role for AWS&nbsp;Backup copy jobs
 - Tolerance for slow operations and clock drift in a distributed system. The
   function that reduces retention of original backups after they have been
   copied applies a full-day margin.
-
-I am not publishing my custom KMS encryption key policies or AWS&nbsp;Backup
-backup and copy role policies. If you need help with least-privilege,
-cross-account, multi-region KMS key policies, or with least-privilege IAM
-policies for AWS&nbsp;Backup, please get in touch. This is part of what I do
-for a living.
 
 ### Security Steps You Can Take
 
@@ -524,6 +507,23 @@ for a living.
 - Instead of relying on sample vaults, on default `aws/` KMS keys, and on the
   AWSBackupDefaultServiceRole , define custom equivalents with least-privilege
   resource- and/or identity-based policies tailored to your needs.
+- To prevent use of backups if an AWS account containing a backup vault is
+  removed from the organization, encrypt backups (and original resources, for
+  resource types that do _not_ support
+  [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
+  with a custom KMS key housed in an account separate from the original
+  resources and the backup vault. In the key policy, deny usage by principals
+  outside the organization. Control over key usage is a major benefit of
+  creating a customer-managed KMS key. Having the key policy serve as a
+  security barrier is a major benefit of housing the key in an account separate
+  from the account where it is used. Limit access to this separate account to
+  people authorized to change key policies.
+
+I am not publishing my custom KMS encryption key policies or AWS&nbsp;Backup
+backup and copy role policies. If you need help with least-privilege,
+cross-account, multi-region KMS key policies, or with least-privilege IAM
+policies for AWS&nbsp;Backup roles, please contact me. This is part of what I
+do for a living.
 
 </details>
 
