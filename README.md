@@ -14,10 +14,10 @@ Backup Events automatically **copies on‑demand backups to**:
 - **and a second region**, for compliance, disaster recovery, or
   just peace-of-mind.
 
-Then, it **saves money** by scheduling the original backup for deletion.
+It also **saves money** by scheduling the original backup for deletion.
 
-It also **monitors** on-demand backup and copy jobs, sending a message to an
-error queue if something goes wrong.
+It **monitors** on-demand backups and copies, sending messages to an error
+queue if they fail.
 
 You can get started immediately, or customize Backup Events.
 
@@ -67,8 +67,10 @@ in **bold**. In this example,
 
 |Element|||Value|
 |:---|:---|:---|:---|
+|||||
 |BackupSelection|[Resources](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupSelection.html#Backup-Type-BackupSelection-Resources)[0]||`arn:aws:rds:us‑east‑1:888866664444:db:Your‑Database`|
 ||Resources[1]||`arn:aws:rds:us‑east‑1:888866664444:db‑cluster:Your‑Cluster`|
+|||||
 |[BackupPlan](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupPlan.html).Rules[0]|[TargetBackupVault](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupRule.html#Backup-Type-BackupRule-TargetBackupVaultName)||`Default` (resource region and resource account are implicit)|
 ||**Lifecycle.[DeleteAfterDays](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterDays)** _updated_||NewDeleteAfterDays CloudFormation parameter value|
 ||**CopyActions[0]** _new_|[DestinationBackupVaultArn](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_CopyAction.html#Backup-Type-CopyAction-DestinationBackupVaultArn)|`arn:aws:backup:us‑west‑2:999977775555:backup‑vault:Default`|
@@ -103,14 +105,17 @@ retain the sample vaults, disable Backup Events instead, by changing the
 <br/>
 
 If you sometimes take on-demand backups, update your Backup Events
-CloudFormation StackSet or stacks. `v2.0.0`&nbsp;:
+CloudFormation StackSet or stacks. `v2.1.0`&nbsp;:
 
 - Ignores scheduled backups from backup plans (because plans support
   CopyActions) but still copies on-demand backups.
-- Directly copies an on-demand backup from the resource account to _both_ the
-  resource and backup regions in the backup account.
-- Reduces retention of an on-demand backup after the more important of the two
-  copies, to the backup region, has been completed.
+- Copies an on-demand backup from the resource account directly to the backup
+  account, backup region.
+- If the first copy completes successfully, copies the on-demand backup from
+  the resource account to the backup account, resource region.
+- If the second copy completes successfully, reduces retention of the original
+  on-demand backup.
+- Tracks on-demand backup and on-demand copy failures in the error queue.
 
 </details>
 
@@ -131,7 +136,7 @@ Click to view the architecture diagram:
 
 ## Quick Start
 
- 1. Check prerequisites.
+ 1. Check AWS&nbsp;Backup prerequisites.
 
     If you have already used AWS&nbsp;Backup from the console, to back up a
     resource in one AWS account (your "main account") and copy the backup to
@@ -240,16 +245,66 @@ Click to view the architecture diagram:
     Switch to your backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
-13. In case of trouble, focus on the resource region and check the following,
-    in the main/resource account:
+13. In case of trouble, check the following, in the main/resource account, in
+    the resource region:
 
-    - The [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
-
+    - The
+      [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
     - The `BackupEvents-ErrorQueue`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
-    - [CloudTrail&rarr;Event&nbsp;history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
-      Tips: Change "Read-only" to `true` to see more events. Select the gear
-      icon at the right to add the "Error code" column.
+    - AWS&nbsp;Backup
+      [backup&nbsp;jobs](https://console.aws.amazon.com/backup/home#/jobs/backup)
+      and
+      [copy&nbsp;jobs](https://console.aws.amazon.com/backup/home#/jobs/copy).
+      Select a longer time window than "Last 24 hours", if necessary.
+    - [CloudTrail Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
+      Change "Read-only" to `true` to see more events. Select the gear icon at
+      the right to add the "Error code" column.
+
+    <details>
+      <summary>Troubleshooting advice...</summary>
+
+    <br/>
+
+    If a copy job did not start, or if it started but failed, intervene before
+    the deletion day (if any) that you specified when you started the on-demand
+    backup. The original backup might be available for you to re-copy.
+
+    Keep in mind that successful completion of certain on-demand copy jobs will
+    trigger Backup Events actions. Completion of the first copy will trigger
+    the second, and completion of the second copy will trigger reduction of the
+    original backup's retention period. To disable the triggers, temporarily
+    set the `EnableCopy` and/or `EnableUpdateLifecycle` CloudFormation
+    parameters to `false`&nbsp.
+
+    When you start an on-demand backup, keep the start window and the
+    completion window as short as possible so that you will not have to wait
+    many hours or days for error feedback from AWS&nbsp;Backup.
+
+    Sometimes, a resource is not in the expected state when AWS&nbsp;Backup
+    actually starts a requested backup. For example, an RDS database instance
+    must be in the `available` state.
+
+    Timeouts and cross-region network problems are rare but permissions
+    problems are a likely cause of errors. When you start an on-demand backup
+    or copy, make sure you have permission to pass your chosen backup role or
+    backup copy role to AWS&nbsp;Backup. Start a new on-demand backup or copy
+    job after checking and correcting:
+
+    - policies and the permissions boundary for a custom backup role
+    - policies and the permissions boundary for a custom backup copy role
+    - availability of the AWSBackupDefaultServiceRole in the backup account
+      (even if you use a custom backup copy role, AWS&nbsp;Backup uses the
+      default role to complete a cross-account copy)
+    - backup vault policies in all relevant AWS accounts and regions (if you
+      write custom policies, compare the policies for the sample vaults)
+    - central service control policies and resource control policies (SCPs and
+      RCPs)
+    - key policies for customer-managed KMS encryption keys applied to backup
+      vaults (and to resources, if the resource types do not support
+      [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
+
+    </details>
 
 14. Delete the EFS file system and all of its AWS&nbsp;Backup backups (or let
     the backups expire, at a small cost).
@@ -360,7 +415,7 @@ resources potentially deployed to the backup account.
 
       ```terraform
       module "backup_events_stackset" {
-        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.0.0"
+        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.1.0"
         # Reference a specific version from github.com/sqlxpert/backup-events-aws/releases
 
         backup_events_stackset_regions                 = ["us-east-1", "us-west-2", ]
@@ -420,22 +475,24 @@ software at your own risk. You are encouraged to evaluate the source code._
     they have been copied can access backups in any vault in the same AWS
     account and region. Tampering with the function's source code, environment
     variable or event input would allow switching vaults. The backup account is
-    a security barrier; the function is never deployed there. The problem?
-    [Backup or recoveryPoint ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-recoveryPoint)
+    a security barrier; the function is never deployed there. The problem? Flat
+    [backup or "recoveryPoint" ARNs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-recoveryPoint)
     do not include the vault name, and
     [UpdateRecoveryPointLifecycle](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsbackup.html#awsbackup-UpdateRecoveryPointLifecycle)
-    does not support an IAM condition key for vault name or ARN.
+    does not support an IAM condition key for vault ARN.
 - Readable IAM policies, broken down into discrete statements by service,
-  resource or principal. Policies are formatted as CloudFormation YAML rather
-  than JSON.
-- Tolerance for slow operations and clock drift in a distributed system
-  - The function that reduces retention of original backups after they have
-    been copied applies a full-day margin.
-- Options to encrypt the log and the error queue at rest, using the AWS Key
-  Management System (KMS)
+  resource or principal. Policies, except those open to customization, are
+  formatted as CloudFormation YAML rather than native JSON.
 - Least-privilege SQS queue policy with support for customization
-- Option to use custom vaults (with custom KMS keys) and a custom role for
-  AWS&nbsp;Backup
+- Options to encrypt the log and the error queue at rest, using the AWS Key
+  Management System
+- Options to use a custom, multi-region KMS key for the sample backup vaults or
+  to use custom backup vaults, with KMS keys and vault access policies of your
+  choice
+- Option to use a custom role for AWS&nbsp;Backup copy jobs
+- Tolerance for slow operations and clock drift in a distributed system. The
+  function that reduces retention of original backups after they have been
+  copied applies a full-day margin.
 
 ### Security Steps You Can Take
 
@@ -450,6 +507,23 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Instead of relying on sample vaults, on default `aws/` KMS keys, and on the
   AWSBackupDefaultServiceRole , define custom equivalents with least-privilege
   resource- and/or identity-based policies tailored to your needs.
+- To prevent use of backups if an AWS account containing a backup vault is
+  removed from the organization, encrypt backups (and original resources, for
+  resource types that do _not_ support
+  [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
+  with a custom KMS key housed in an account separate from the original
+  resources and the backup vault. In the key policy, deny usage by principals
+  outside the organization. Control over key usage is a major benefit of
+  creating a customer-managed KMS key. Having the key policy serve as a
+  security barrier is a major benefit of housing the key in an account separate
+  from the account where it is used. Limit access to this separate account to
+  people authorized to change key policies.
+
+I am not publishing my custom KMS encryption key policies or AWS&nbsp;Backup
+backup and copy role policies. If you need help with least-privilege,
+cross-account, multi-region KMS key policies, or with least-privilege IAM
+policies for AWS&nbsp;Backup roles, please contact me. This is part of what I
+do for a living.
 
 </details>
 
@@ -467,7 +541,7 @@ software at your own risk. You are encouraged to evaluate the source code._
   from the second day, and so on, within reason) is a better investment of
   engineering effort. Consider
   [AWS&nbsp;Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)!
-- Set lifecycles when making on-demand backups, but **specify 7&nbsp;days
+- Set lifecycles when starting on-demand backups, but **specify 7&nbsp;days
   minimum before backups are transitioned to cold storage** / the "archive
   tier". Allow time for cross-account and cross-region copies to complete, and
   for original backups to be scheduled for deletion. If an original backup
@@ -531,10 +605,10 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Up-to-date:** AWS never returned to update the sample solution for
   multi-region encryption keys or direct cross-account Lambda function
-  invocation. A multi-region key make it easy to move backups between regions.
-  Direct cross-account invocation eliminates several components. (My
-  February,&nbsp;2026 update has eliminated the need for a cross-account
-  invocation mechanism.)
+  invocation. A multi-region key makes it easy to move backups between regions.
+  Direct cross-account Lambda function invocation eliminates several
+  infrastructure components. (My February,&nbsp;2026 update has eliminated the
+  need for a cross-account invocation mechanism.)
 
 - **Centrally deployable:** 1&nbsp;CloudFormation template replaces AWS's
   3&nbsp;separate templates. Advanced users can use the template to create a
@@ -546,28 +620,21 @@ So, I decided to write a new solution from scratch. The benefits?
 
 - **Supports on-demand backups:** AWS's solution depends on the copy step
   available in backup plans but not in on-demand backup requests. Waiting for
-  an on-demand backup job to complete before you manually start copy jobs is
+  an on-demand backup job to complete before you start on-demand copy jobs is
   tedious and prone to error. Also, you might forget to check for copy
   completion. (As of my February,&nbsp;2026, update, only on-demand backups are
   supported.)
 
-- **Supports a multi-region, cross-account encryption key:** A multi-region KMS
-  key makes moving encrypted backups from one region to another easier. Housing
-  the key in a central, limited-access account increases control. (I am not
-  publishing my custom key policy for AWS&nbsp;Backup. If you need multi-region
-  KMS encryption keys and least privilege key policies, contact me! It's the
-  kind of work I do for a living.)
-
-- **Streamlined:** Object-oriented Python code interprets backup job events
-  and copy job events. An abstract base class covers the many similarities and
+- **Streamlined:** Object-oriented Python code interprets backup events and
+  copy events. An abstract base class covers the many similarities and
   subclasses, the few differences. This way, the same primitives serve for
-  copying a backup and for reducing the backup's retention period. If AWS had
-  chosen more consistent key names, subclasses would not be necessary.
+  copying a backup and for reducing the backup's retention period. (If AWS had
+  chosen more consistent key names, subclasses would not be necessary.)
 
 - **Simple:** The function to reduce the retention period after copying is easy
   to understand. Minimum retention periods under various rules are added to a
-  list. At the end, the highest minimum is applied. The original backup can be
-  deleted as soon as AWS allows, but no sooner!
+  list. The longest one stands. The original backup can be deleted as soon as
+  AWS allows, but no sooner!
 
 </details>
 
