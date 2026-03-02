@@ -14,9 +14,9 @@ Backup Events automatically **copies on‑demand backups to**:
 - **and a second region**, for compliance, disaster recovery, or
   just peace-of-mind.
 
-Then, it **saves money** by scheduling the original backup for deletion.
+It also **saves money** by scheduling the original backup for deletion.
 
-It also **monitors** on-demand backups and copies, sending messages to an error
+It **monitors** on-demand backups and copies, sending messages to an error
 queue if they fail.
 
 You can get started immediately, or customize Backup Events.
@@ -67,8 +67,10 @@ in **bold**. In this example,
 
 |Element|||Value|
 |:---|:---|:---|:---|
+|||||
 |BackupSelection|[Resources](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupSelection.html#Backup-Type-BackupSelection-Resources)[0]||`arn:aws:rds:us‑east‑1:888866664444:db:Your‑Database`|
 ||Resources[1]||`arn:aws:rds:us‑east‑1:888866664444:db‑cluster:Your‑Cluster`|
+|||||
 |[BackupPlan](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupPlan.html).Rules[0]|[TargetBackupVault](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupRule.html#Backup-Type-BackupRule-TargetBackupVaultName)||`Default` (resource region and resource account are implicit)|
 ||**Lifecycle.[DeleteAfterDays](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_Lifecycle.html#Backup-Type-Lifecycle-DeleteAfterDays)** _updated_||NewDeleteAfterDays CloudFormation parameter value|
 ||**CopyActions[0]** _new_|[DestinationBackupVaultArn](https://docs.aws.amazon.com/aws-backup/latest/devguide/API_CopyAction.html#Backup-Type-CopyAction-DestinationBackupVaultArn)|`arn:aws:backup:us‑west‑2:999977775555:backup‑vault:Default`|
@@ -134,7 +136,7 @@ Click to view the architecture diagram:
 
 ## Quick Start
 
- 1. Check prerequisites.
+ 1. Check AWS&nbsp;Backup prerequisites.
 
     If you have already used AWS&nbsp;Backup from the console, to back up a
     resource in one AWS account (your "main account") and copy the backup to
