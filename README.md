@@ -243,10 +243,11 @@ Click to view the architecture diagram:
     Switch to your backup AWS account and check for copies of your backup in
     the main region and the backup region.
 
-13. In case of trouble, focus on the resource region and check the following,
-    in the main/resource account:
+13. In case of trouble, check the following, in the main/resource account, in
+    the resource region:
 
-    - The [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
+    - The
+      [BackupEvents CloudWatch log group](https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups$3FlogGroupNameFilter$3DBackupEvents)
     - The `BackupEvents-ErrorQueue`
       [SQS queue](https://console.aws.amazon.com/sqs/v3/home#/queues)
     - AWS&nbsp;Backup
@@ -254,30 +255,18 @@ Click to view the architecture diagram:
       and
       [copy&nbsp;jobs](https://console.aws.amazon.com/backup/home#/jobs/copy).
       Select a longer time window than "Last 24 hours", if necessary.
-    - [CloudTrail&rarr;Event&nbsp;history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
-      Tips: Change "Read-only" to `true` to see more events. Select the gear
-      icon at the right to add the "Error code" column.
+    - [CloudTrail Event history](https://console.aws.amazon.com/cloudtrailv2/home#/events).
+      Change "Read-only" to `true` to see more events. Select the gear icon at
+      the right to add the "Error code" column.
 
-    Keep the start window and the completion window as short as possible when
-    you start an on-demand backup, so that you will not have to wait many hours
-    or days for error feedback from AWS&nbsp;Backup.
+    <details>
+      <summary>Troubleshooting advice...</summary>
 
-    Sometimes, a resource is not in the expected state when AWS&nbsp;Backup
-    actually starts a requested backup. For example, an RDS database instance
-    must be in the `available` state.
-
-    Timeouts and cross-region network problems are rare but permissions
-    problems are a likely cause of errors. When you start an on-demand backup,
-    make sure you have permission to pass your chosen backup role to
-    AWS&nbsp;Backup. After checking and correcting backup vault policies,
-    policies and the permissions boundary for your backup role, policies and
-    the permissions boundary for a custom backup copy role, and any central
-    service control policies and resource control policies (SCPs and RCPs),
-    start a new on-demand backup.
+    <br/>
 
     If a copy job did not start, or if it started but failed, intervene before
     the deletion day (if any) that you specified when you started the on-demand
-    backup. The original backup will be available for you to re-copy.
+    backup. The original backup might be available for you to re-copy.
 
     Keep in mind that successful completion of certain on-demand copy jobs will
     trigger Backup Events actions. Completion of the first copy will trigger
@@ -285,6 +274,35 @@ Click to view the architecture diagram:
     original backup's retention period. To disable the triggers, temporarily
     set the `EnableCopy` and/or `EnableUpdateLifecycle` CloudFormation
     parameters to `false`&nbsp.
+
+    When you start an on-demand backup, keep the start window and the
+    completion window as short as possible so that you will not have to wait
+    many hours or days for error feedback from AWS&nbsp;Backup.
+
+    Sometimes, a resource is not in the expected state when AWS&nbsp;Backup
+    actually starts a requested backup. For example, an RDS database instance
+    must be in the `available` state.
+
+    Timeouts and cross-region network problems are rare but permissions
+    problems are a likely cause of errors. When you start an on-demand backup
+    or copy, make sure you have permission to pass your chosen backup role or
+    backup copy role to AWS&nbsp;Backup. Start a new on-demand backup or copy
+    job after checking and correcting:
+
+    - policies and the permissions boundary for a custom backup role
+    - policies and the permissions boundary for a custom backup copy role
+    - availability of the AWSBackupDefaultServiceRole in the backup account
+      (even if you use a custom backup copy role, AWS&nbsp;Backup uses the
+      default role to complete a cross-account copy)
+    - backup vault policies in all relevant AWS accounts and regions (if you
+      write custom policies, compare the policies for the sample vaults)
+    - central service control policies and resource control policies (SCPs and
+      RCPs)
+    - key policies for customer-managed KMS encryption keys applied to backup
+      vaults (and to resources, if the resource types do not support
+      [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
+
+    </details>
 
 14. Delete the EFS file system and all of its AWS&nbsp;Backup backups (or let
     the backups expire, at a small cost).
@@ -484,6 +502,12 @@ software at your own risk. You are encouraged to evaluate the source code._
 - Tolerance for slow operations and clock drift in a distributed system. The
   function that reduces retention of original backups after they have been
   copied applies a full-day margin.
+
+I am not publishing my custom KMS encryption key policies or AWS&nbsp;Backup
+backup and copy role policies. If you need help with least-privilege,
+cross-account, multi-region KMS key policies, or with least-privilege IAM
+policies for AWS&nbsp;Backup, please get in touch. This is part of what I do
+for a living.
 
 ### Security Steps You Can Take
 
