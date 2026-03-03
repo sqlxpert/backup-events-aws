@@ -3,7 +3,11 @@
 _AWS&nbsp;Backup is the official backup service for RDS, Aurora, DynamoDB and
 DocumentDB databases; EBS disk volumes; entire EC2 instances; EFS file systems;
 entire S3 buckets; and, as of November,&nbsp;2025,
-[Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks)._
+[Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks).
+"On-demand" backups include ones started in the AWS&nbsp;Console, or with
+[start-backup-job](https://docs.aws.amazon.com/cli/latest/reference/backup/start-backup-job.html)
+in the AWS&nbsp;command-line interface, or in scripts, Step Functions, Lambda
+functions, and programs._
 
 Backup Events automatically **copies on‑demand backups to**:
 
