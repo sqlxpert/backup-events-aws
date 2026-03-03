@@ -19,6 +19,8 @@ It also **saves money** by scheduling the original backup for deletion.
 It **monitors** on-demand backups and copies, sending messages to an error
 queue if they fail.
 
+---
+
 You can get started immediately, or customize Backup Events.
 
 - Try the sample backup vaults, or "bring your own vaults" (BYOV).
@@ -28,7 +30,7 @@ You can get started immediately, or customize Backup Events.
   [any resource that AWS&nbsp;Backup supports](https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-feature-availability.html#features-by-resource).
 - Use 1&nbsp;CloudFormation&nbsp;template to create: 3&nbsp;stacks for a
   minimum installation _or_ 1&nbsp;Stack*Set* to cover many AWS&nbsp;accounts
-  and regions.
+  and regions. A Terraform module is also provided.
 
 Jump to:
 [Quick Start](#quick-start)
@@ -108,9 +110,9 @@ If you sometimes take on-demand backups, update your Backup Events
 CloudFormation StackSet or stacks. `v2.1.0`&nbsp;:
 
 - Ignores scheduled backups from backup plans (because plans support
-  CopyActions) but still copies on-demand backups.
-- Copies an on-demand backup from the resource account directly to the backup
-  account, backup region.
+  CopyActions).
+- If an on-demand backup completes successfully, copies it from the resource
+  account directly to the backup account, backup region.
 - If the first copy completes successfully, copies the on-demand backup from
   the resource account to the backup account, resource region.
 - If the second copy completes successfully, reduces retention of the original
@@ -132,7 +134,7 @@ Jump to:
 
 Click to view the architecture diagram:
 
-[<img src="media/backup-events-aws-components.png" alt="1. Every resource account and resource region contains: a backup vault, EventBridge event rules, an AWS Lambda function to copy a backup, a function to update the backup's lifecycle, and an error queue. 2. In the backup account, in every resource region there is a vault in which a copy is kept, based on the original lifecycle. 3. In the backup account, in the backup region and its alternate, there is a vault in which a copy is kept, based on the original lifecycle. A change in an on-demand backup job's state, to 'COMPLETED', triggers two input transformers. One changes the destination region to the backup region or its alternate. The other keeps the current region. The transformed inputs both trigger the same Lambda function, to copy the backup to the backup account. A change in a copy job's state, to 'COMPLETED', triggers a Lambda function which reduces 'delete after days' for the original backup to the earliest allowed value: the next Universal Coordinated Time day, the configured parameter value, or the cold storage minimum. A change in the state of a backup or copy job, to 'FAILED', sends a message to the Simple Queue System error queue." width="288" />](media/backup-events-aws-components.png?raw-true "Components of Backup Events")
+[<img src="media/backup-events-aws-components.png" alt="A resource account contains, in a resource region: a backup vault for the original backup, EventBridge rules, a Lambda function to copy a backup, a function to update the backup's lifecycle, and a Simple Queue Service error queue. The backup account contains, in the backup region or its alternate: a vault for Copy 1. The backup account contains, in a resource region: a vault for Copy 2. Completion of the backup triggers the copy function. Completion of Copy 1 triggers the copy function again. Completion of Copy 2 triggers the function to reduce the retention period of the original backup. Backup or copy failures, or errors in the functions, go to the error queue." width="288" />](media/backup-events-aws-components.png?raw-true "Components of Backup Events")
 
 ## Quick Start
 
@@ -164,9 +166,9 @@ Click to view the architecture diagram:
     - Under "Service opt-in" (scroll up), EFS (for the quick-start) and any
       other relevant services are enabled.
     - [AWSBackupDefaultServiceRole](https://console.aws.amazon.com/iam/home#/roles/details/AWSBackupDefaultServiceRole)
-      exists in your main/resource account(s) and in the backup account. If you
-      use the AWS Console, AWS&nbsp;Backup creates this role the first time you
-      make an on-demand backup in a given AWS account. Otherwise, see
+      exists in your main/resource account(s). If you use the AWS Console,
+      AWS&nbsp;Backup creates this role the first time you make an on-demand
+      backup in a given AWS account. Otherwise, see
       [Default service role for AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/iam-service-roles.html#default-service-roles).
     - Permissions are sufficient and service and resource control policies
       (SCPs and RCPs), permissions boundaries, or session policies do not
@@ -291,15 +293,12 @@ Click to view the architecture diagram:
     backup copy role to AWS&nbsp;Backup. Start a new on-demand backup or copy
     job after checking and correcting:
 
+    - availability of the AWSBackupDefaultServiceRole
     - policies and the permissions boundary for a custom backup role
     - policies and the permissions boundary for a custom backup copy role
-    - availability of the AWSBackupDefaultServiceRole in the backup account
-      (even if you use a custom backup copy role, AWS&nbsp;Backup uses the
-      default role to complete a cross-account copy)
     - backup vault policies in all relevant AWS accounts and regions (if you
       write custom policies, compare the policies for the sample vaults)
-    - central service control policies and resource control policies (SCPs and
-      RCPs)
+    - central service and resource control policies (SCPs and RCPs)
     - key policies for customer-managed KMS encryption keys applied to backup
       vaults (and to resources, if the resource types do not support
       [full management and independent encryption in AWS&nbsp;Backup](https://docs.aws.amazon.com/aws-backup/latest/devguide/encryption.html#independent-encryption))
@@ -370,9 +369,7 @@ resources potentially deployed to the backup account.
       `"sts:AssumeRole"` . Attach the
       [`arn:aws:iam::aws:policy/service‑role/AWSBackupServiceRolePolicyForBackup`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSBackupServiceRolePolicyForBackup.html)
       AWS-managed IAM policy. Choose one region in which to deploy your role;
-      roles are account-wide. Because of the way AWS&nbsp;Backup cross-account
-      copy requests work, AWSBackupDefaultServiceRole must exist in your backup
-      account even if you define a custom IAM role in your resource accounts.
+      roles are account-wide.
 
  4. Determine the regions and organizational unit(s) in which you will install
     Backup Events.
