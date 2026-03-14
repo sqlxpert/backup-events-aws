@@ -138,7 +138,7 @@ Jump to:
 
 Click to view the architecture diagram:
 
-[<img src="media/backup-events-aws-components.png" alt="A resource account contains, in a resource region: a backup vault for the original backup, EventBridge rules, a Lambda function to copy a backup, a function to update the backup's lifecycle, and a Simple Queue Service error queue. The backup account contains, in the backup region or its alternate: a vault for Copy 1. The backup account contains, in a resource region: a vault for Copy 2. Completion of the backup triggers the copy function. Completion of Copy 1 triggers the copy function again. Completion of Copy 2 triggers the function to reduce the retention period of the original backup. Backup or copy failures, or errors in the functions, go to the error queue." width="288" />](media/backup-events-aws-components.png?raw-true "Components of Backup Events")
+[<img src="/media/backup-events-aws-components.png" alt="A resource account contains, in a resource region: a backup vault for the original backup, EventBridge rules, a Lambda function to copy a backup, a function to update the backup's lifecycle, and a Simple Queue Service error queue. The backup account contains, in the backup region or its alternate: a vault for Copy 1. The backup account contains, in a resource region: a vault for Copy 2. Completion of the backup triggers the copy function. Completion of Copy 1 triggers the copy function again. Completion of Copy 2 triggers the function to reduce the retention period of the original backup. Backup or copy failures, or errors in the functions, go to the error queue." width="288" />](/media/backup-events-aws-components.png?raw-true "Components of Backup Events")
 
 ## Quick Start
 
