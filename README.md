@@ -523,6 +523,11 @@ software at your own risk. You are encouraged to evaluate the source code._
   of Lambda's AddPermission operation.
 - Prevent use of the function roles with arbitrary functions. See comments.
 - Log infrastructure changes using AWS CloudTrail, and set up alerts.
+- If you use Terraform, do not use it with an AWS access key and do not give it
+  full AWS administrative privileges. Instead, follow AWS's
+  [Best practices for using the Terraform AWS Provider: Security best practices](https://docs.aws.amazon.com/prescriptive-guidance/latest/terraform-aws-provider-best-practices/security.html).
+  Do the extra work of defining a least-privilege IAM role for deploying each
+  workload. Configure Terraform to assume workload-specific roles.
 - Instead of relying on sample vaults, on default `aws/` KMS keys, and on the
   AWSBackupDefaultServiceRole , define custom equivalents with least-privilege
   resource- and/or identity-based policies tailored to your needs.
