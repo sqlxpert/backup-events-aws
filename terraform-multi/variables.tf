@@ -2,6 +2,7 @@
 # github.com/sqlxpert/backup-events-aws  GPLv3  Copyright Paul Marcelin
 
 
+
 variable "backup_events_stackset_name_suffix" {
   type        = string
   description = "Optional CloudFormation StackSet name suffix, for blue/green deployments or other scenarios in which multiple StackSets created from the same template are needed."

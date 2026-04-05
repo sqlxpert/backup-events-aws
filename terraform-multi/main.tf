@@ -147,9 +147,9 @@ resource "aws_cloudformation_stack_set_instance" "backup_events" {
 
   stack_set_instance_region = each.value.region
   deployment_targets {
-    organizational_unit_ids = sort(
+    organizational_unit_ids = sort(toset(
       var.backup_events_stackset_organizational_unit_ids
-    )
+    ))
   }
   retain_stack = false
 

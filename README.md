@@ -2,12 +2,12 @@
 
 _AWS&nbsp;Backup is the official backup service for RDS, Aurora, DynamoDB and
 DocumentDB databases; EBS disk volumes; entire EC2 instances; EFS file systems;
-entire S3 buckets; and, as of November,&nbsp;2025,
+entire S3 buckets; and, as of 2025,
 [Elastic Kubernetes Service (EKS)&nbsp;clusters](https://aws.amazon.com/about-aws/whats-new/2025/11/aws-backup-supports-amazon-eks).
 "On-demand" backups include ones started in the AWS&nbsp;Console, or with
-[start-backup-job](https://docs.aws.amazon.com/cli/latest/reference/backup/start-backup-job.html)
-in the AWS&nbsp;command-line interface, or in scripts, Step Functions, Lambda
-functions, and programs._
+[`start-backup-job`](https://docs.aws.amazon.com/cli/latest/reference/backup/start-backup-job.html)
+in the command-line interface, or in scripts, Step Functions, Lambda functions,
+and programs._
 
 Backup Events automatically **copies on‑demand backups to**:
 
@@ -22,6 +22,14 @@ It also **saves money** by scheduling the original backup for deletion.
 
 It **monitors** on-demand backups and copies, sending messages to an error
 queue if they fail.
+
+>&#128274; Software supply chain security is on everyone's mind. This tool's
+two Lambda functions share one source file that's short enough to read
+(&lt;&nbsp;250&nbsp;lines of code). I've made GitHub releases immutable as of
+`v2.1.1`&nbsp;. AWS
+[patches](https://docs.aws.amazon.com/lambda/latest/dg/runtime-management-shared.html#:~:text=Lambda%20is%20responsible%20for%20applying,Auto%20runtime%20update%20mode.)
+the stock Lambda runtime, which provides the Python standard library and the
+AWS software development kit (boto, boto3). There are no other dependencies.
 
 ---
 
@@ -111,7 +119,7 @@ retain the sample vaults, disable Backup Events instead, by changing the
 <br/>
 
 If you sometimes take on-demand backups, update your Backup Events
-CloudFormation StackSet or stacks. `v2.1.0`&nbsp;:
+CloudFormation StackSet or stacks. `v2.1.0` or a later version:
 
 - Ignores scheduled backups from backup plans (because plans support
   CopyActions).
@@ -192,11 +200,11 @@ Click to view the architecture diagram:
 
     - Your main region will double as the _alternate_ for your backup region.
 
- 4. Create a
-    [CloudFormation stack](https://console.aws.amazon.com/cloudformation/home)
-    "With new resources". Under "Specify template", select "Upload a template
-    file", then select "Choose file" and navigate to a locally-saved copy of
-    [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
+ 4. [Create a CloudFormation stack](https://console.aws.amazon.com/cloudformation/home#/stacks/create).
+
+    Under "Specify template", select "Upload a template file", then select
+    "Choose file" and navigate to a locally-saved copy of
+    [cloudformation/backup_events_aws.yaml](/../../blob/v2.1.1/cloudformation/backup_events_aws.yaml?raw=true)
     [right-click to save as...]. On the next page, set:
 
     - Stack name - _Copy and paste from "For Reference"_
@@ -393,11 +401,11 @@ resources potentially deployed to the backup account.
 
     - **CloudFormation**<br/>_Easy_ &check;
 
-      Create a
-      [CloudFormation StackSet](https://console.aws.amazon.com/cloudformation/home#/stacksets).
+      [Create a CloudFormation StackSet](https://console.aws.amazon.com/cloudformation/home#/stacksets/create).
+
       Under "Specify template", select "Upload a template file", then select
       "Choose file" and upload a locally-saved copy of
-      [cloudformation/backup_events_aws.yaml](/cloudformation/backup_events_aws.yaml?raw=true)
+      [cloudformation/backup_events_aws.yaml](/../../blob/v2.1.1/cloudformation/backup_events_aws.yaml?raw=true)
       [right-click to save as...].
 
       - Set parameters as in Step&nbsp;4 of the
@@ -416,11 +424,12 @@ resources potentially deployed to the backup account.
 
       ```terraform
       module "backup_events_stackset" {
-        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.1.0"
+        source = "git::https://github.com/sqlxpert/backup-events-aws.git//terraform-multi?ref=v2.1.1"
         # Reference a specific version from github.com/sqlxpert/backup-events-aws/releases
+        # Check that the release is immutable!
 
-        backup_events_stackset_regions                 = ["us-east-1", "us-west-2", ]
-        backup_events_stackset_organizational_unit_ids = ["ou-abcd-efghijkl", ]
+        backup_events_stackset_regions                 = ["us-east-1", "us-west-2",]
+        backup_events_stackset_organizational_unit_ids = ["ou-abcd-efghijkl",]
 
         backup_events_stackset_params = {
           BackupAccountId       = "999977775555"
@@ -466,10 +475,12 @@ _In accordance with the software license, nothing in this section creates a
 warranty, an indemnification, an assumption of liability, etc. Use this
 software at your own risk. You are encouraged to evaluate the source code._
 
-<details>
-  <summary>Security details...</summary>
-
 ### Security Design Goals
+
+<details>
+  <summary>Security goals...</summary>
+
+<br/>
 
 - Least-privilege roles for the AWS Lambda functions
   - The role for the function that reduces retention of original backups after
@@ -495,7 +506,14 @@ software at your own risk. You are encouraged to evaluate the source code._
   function that reduces retention of original backups after they have been
   copied applies a full-day margin.
 
+</details>
+
 ### Security Steps You Can Take
+
+<details>
+  <summary>Security actions...</summary>
+
+<br/>
 
 - Prevent modification of the components, most of which are identified by
   `BackupEvents` in ARNs and in the automatic `aws:cloudformation:stack-name`
@@ -505,6 +523,11 @@ software at your own risk. You are encouraged to evaluate the source code._
   of Lambda's AddPermission operation.
 - Prevent use of the function roles with arbitrary functions. See comments.
 - Log infrastructure changes using AWS CloudTrail, and set up alerts.
+- If you use Terraform, do not use it with an AWS access key and do not give it
+  full AWS administrative privileges. Instead, follow AWS's
+  [Best practices for using the Terraform AWS Provider: Security best practices](https://docs.aws.amazon.com/prescriptive-guidance/latest/terraform-aws-provider-best-practices/security.html).
+  Do the extra work of defining a least-privilege IAM role for deploying each
+  workload. Configure Terraform to assume workload-specific roles.
 - Instead of relying on sample vaults, on default `aws/` KMS keys, and on the
   AWSBackupDefaultServiceRole , define custom equivalents with least-privilege
   resource- and/or identity-based policies tailored to your needs.
