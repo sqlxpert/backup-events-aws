@@ -29,7 +29,7 @@ two Lambda functions share one source file that's short enough to read
 `v2.1.1`&nbsp;. AWS
 [patches](https://docs.aws.amazon.com/lambda/latest/dg/runtime-management-shared.html#:~:text=Lambda%20is%20responsible%20for%20applying,Auto%20runtime%20update%20mode.)
 the stock Lambda runtime, which provides the Python standard library and the
-AWS software development kit (boto, boto3).
+AWS software development kit (boto, boto3). There are no other dependencies.
 
 ---
 
